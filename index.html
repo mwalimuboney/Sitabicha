@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="School Records">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+<title>School Records</title>
+</head>
+<body>
+<header class="top"><button id="back" class="icon hidden" aria-label="Back">&#8592;</button><h1 id="title">School Records</h1></header>
+<main id="main"><p class="muted pad">Loading…</p></main>
+<nav class="tabs" id="tabs">
+  <a href="#/home" data-t="home"><i>&#127968;</i>Home</a>
+  <a href="#/students" data-t="students"><i>&#128100;</i>Students</a>
+  <a href="#/marks" data-t="marks"><i>&#9998;</i>Marks</a>
+  <a href="#/reports" data-t="reports"><i>&#128196;</i>Reports</a>
+  <a href="#/more" data-t="more"><i>&#9776;</i>More</a>
+</nav>
+<div id="toast" class="toast hidden"></div>
+<div id="modal" class="modal hidden"></div>
+<script src="core.js"></script>
+<script src="store.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
