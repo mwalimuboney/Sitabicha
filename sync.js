@@ -10,7 +10,10 @@ const Cloud = (() => {
   const cb = { changed: () => {}, authLost: () => {}, status: () => {} };
   const setStatus = (state, msg = '') => { status.state = state; status.msg = msg; status.pending = Store.dirty().length; cb.status(status); };
   const rejected = () => lsGet(REJ) || [];
-  const emailFor = u => `${String(u).trim().toLowerCase()}@${(cfg().domain || 'school-records.app')}`;
+  const emailFor = u => {
+    const login = String(u).trim().toLowerCase();
+    return login.includes('@') ? login : `${login}@${(cfg().domain || 'school-records.app')}`;
+  };
   const isNet = e => e && (e.network || e instanceof TypeError);
 
   async function raw(path, { method = 'GET', body, token } = {}) {

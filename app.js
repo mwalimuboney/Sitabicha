@@ -126,24 +126,27 @@ function loginScreen() {
     $('#go', d).onclick = go; $('#pw', d).onkeydown = e => { if (e.key === 'Enter') go(); }; $('#un', d).focus();
   }));
 }
-async function cloudLogin(username, password) {
-  username = username.trim().toLowerCase();
+async function cloudLogin(login, password) {
+  login = login.trim().toLowerCase();
   try {
-    const uid = await Cloud.signIn(username, password); await Cloud.pullProfiles(); const u = Store.get('users', uid);
+    const uid = await Cloud.signIn(login, password); await Cloud.pullProfiles(); const u = Store.get('users', uid);
     if (!u || u.active === false) { Cloud.signOut(); throw new Error('This account is not active. Ask your super admin.'); }
-    const salt = Core.uid(); localStorage.setItem('sr_off_' + username, JSON.stringify({ uid, salt, hash: await hashPw(password, salt) }));   // lets this phone sign in later with no internet
+    const salt = Core.uid(), cached = { uid, salt, hash: await hashPw(password, salt) };
+    offlineCache(login, cached);
+    offlineCache(u.username, cached);
     return u;
   } catch (e) {
     if (!e.network) { if (e.status === 400 || e.status === 401) throw new Error('Wrong username or password (or the account is disabled).'); throw e; }
-    let off = null; try { off = JSON.parse(localStorage.getItem('sr_off_' + username) || 'null'); } catch (x) {}
+    let off = null; try { off = JSON.parse(localStorage.getItem('sr_off_' + login) || 'null'); } catch (x) {}
     const u = off && Store.get('users', off.uid);
     if (!off || !u || u.active === false || await hashPw(password, off.salt) !== off.hash) throw new Error('No internet. This phone can only sign in offline for people who have signed in here before.');
     return u;
   }
 }
+function offlineCache(login, credentials) { localStorage.setItem('sr_off_' + login, JSON.stringify(credentials)); }
 function cloudLoginScreen() {
   return new Promise(resolve => overlay(`<div style="width:100%;max-width:340px"><h2>&#9729; ${esc(SET.school_name)}</h2><p>Sign in to your school</p>
-    <input id="un" placeholder="Username" autocapitalize="none" autocomplete="username" style="margin-bottom:10px"><input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+    <input id="un" placeholder="Username or email" autocapitalize="none" autocomplete="username" style="margin-bottom:10px"><input id="pw" type="password" placeholder="Password" autocomplete="current-password">
     <p id="er" style="color:#fecaca;min-height:22px"></p><button class="btn full" id="go" style="background:#fff">Sign in</button><p class="small" style="opacity:.8;margin-top:14px">${navigator.onLine === false ? 'You are offline — only returning users can sign in.' : ''}</p></div>`, d => {
     const go = async () => { $('#er', d).textContent = 'Signing in…'; try { const u = await cloudLogin($('#un', d).value, $('#pw', d).value); startSession(u); d.remove(); resolve(); } catch (e) { $('#er', d).textContent = e.message; $('#pw', d).value = ''; } };
     $('#go', d).onclick = go; $('#pw', d).onkeydown = e => { if (e.key === 'Enter') go(); }; $('#un', d).focus();
