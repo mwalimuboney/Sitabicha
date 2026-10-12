@@ -37,8 +37,8 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--p);border-color:
 .mark .nm{flex:1;min-width:0}.mark .nm div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mark input{width:92px;text-align:center;font-size:19px;font-weight:600}
 .mark input.bad{border-color:var(--bad);background:#fef3f2}.mark input.ok{border-color:var(--good)}
-.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#14201f;color:#fff;padding:11px 18px;border-radius:99px;z-index:20;max-width:90%;font-size:14px}
-.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:30;display:flex;align-items:flex-end;justify-content:center}
+.toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#14201f;color:#fff;padding:11px 18px;border-radius:99px;z-index:70;max-width:90%;font-size:14px}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:flex;align-items:flex-end;justify-content:center}
 .modal>div{background:#fff;border-radius:18px 18px 0 0;padding:18px;width:100%;max-width:520px;max-height:85vh;overflow:auto;padding-bottom:calc(18px + env(safe-area-inset-bottom))}
 .modal h3{margin:0 0 8px}.modal .row{margin-top:14px}
 .lock{position:fixed;inset:0;background:var(--p);z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;padding:24px;text-align:center}

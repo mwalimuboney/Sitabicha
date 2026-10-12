@@ -634,8 +634,10 @@ async function importMarks(text) {
 /* ================= cloud sync page ================= */
 function pageSync() {
   const su = atLeast('superadmin'), st = Cloud.status, rej = Cloud.rejected(), c = Cloud.cfg();
-  if (!Cloud.enabled()) return view('Cloud sync', `<div class="card"><h2>Not connected</h2><p class="muted small">Cloud sync shares students, marks, locks and notifications between all phones, and the server enforces roles and the exam-entry lock. Set up your Supabase project first (see SETUP_SUPABASE.md).</p></div>
+  if (!Cloud.enabled()) { view('Cloud sync', `<div class="card"><h2>Not connected</h2><p class="muted small">Cloud sync shares students, marks, locks and notifications between all phones, and the server enforces roles and the exam-entry lock. Set up your Supabase project first (see SETUP_SUPABASE.md).</p></div>
     ${su ? `<div class="card"><h2>Connect this school</h2><label>Project URL</label><input id="cu" placeholder="https://xxxx.supabase.co" autocapitalize="none"><label>Anon (public) key</label><textarea id="ck" autocapitalize="none"></textarea><label>Login domain</label><input id="cd" value="school-records.app" autocapitalize="none"><div class="msg warn small">You will be signed out and must sign in with your <b>cloud</b> super admin account. Your data on this phone stays and can be uploaded afterwards.</div><button class="btn pri full" id="cc">Connect</button></div>` : '<p class="muted small pad">Ask the super admin to connect this school.</p>'}`, { back: '#/more', tab: 'more' });
+  if ($('#cc')) $('#cc').onclick = async () => { try { await connectCloud($('#cu').value, $('#ck').value, $('#cd').value); } catch (e) { toast(e.message); } };
+  return; }
   view('Cloud sync', `<div class="card"><h2>${st.state === 'ok' ? '&#9989; Synced' : st.state === 'syncing' ? 'Syncing…' : st.state === 'offline' ? '&#128245; Offline' : st.state === 'error' ? '&#9888; Problem' : 'Ready'}</h2>
     <div class="kv"><div>Last sync</div><div>${st.last ? when(st.last) : 'not yet'}</div><div>Waiting to upload</div><div>${Store.dirty().length} change(s)</div><div>Server</div><div>${esc((c.url || '').replace(/^https?:\/\//, ''))}</div></div>
     ${st.msg ? `<div class="msg warn">${esc(st.msg)}</div>` : ''}<button class="btn pri full" id="sn" style="margin-top:12px">Sync now</button></div>
