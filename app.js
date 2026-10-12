@@ -60,7 +60,13 @@ const opts = (arr, sel) => arr.map(x => `<option value="${esc(x.v ?? x)}" ${(x.v
 
 /* ================= accounts & roles ================= */
 let ME = null;
-const ROLE = { teacher: 1, admin: 2, superadmin: 3 };
+const ROLE = { guest: -1, student: 0, parent: 0, teacher: 1, admin: 2, superadmin: 3 };
+const isPortalUser = () => !!ME && ['student', 'parent'].includes(ME.role);
+const portalStudent = () => {
+  if (!isPortalUser()) return null;
+  const id = ME.student_id || (Array.isArray(ME.student_ids) ? ME.student_ids[0] : null);
+  return id ? Store.get('students', id) || null : null;
+};
 const atLeast = r => !!ME && ROLE[ME.role] >= ROLE[r];
 const users = () => Store.all('users').sort((a, b) => ROLE[b.role] - ROLE[a.role] || a.full_name.localeCompare(b.full_name));
 const hex = buf => [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -72,11 +78,12 @@ async function hashPw(pw, salt) {
   let h = 5381; for (const c of salt + pw) h = ((h << 5) + h + c.charCodeAt(0)) | 0; return 'x' + h;   // old browsers only
 }
 async function setPassword(u, pw, must = false) { const salt = Core.uid(); return Store.put('users', { ...u, salt, pw_hash: await hashPw(pw, salt), must_change: must }); }
-async function createUser({ username, full_name, role, password, must = true }) {
+async function createUser({ username, full_name, role, password, must = true, student_id = null }) {
   username = username.trim().toLowerCase(); if (!/^[a-z0-9._-]{3,30}$/.test(username)) throw new Error('Username: 3–30 letters/numbers (a-z, 0-9, . _ -).');
   if (!full_name.trim()) throw new Error('Enter the full name.'); if (String(password).length < 6) throw new Error('Password must be at least 6 characters.');
   if (Store.all('users').some(u => u.username === username)) throw new Error('That username is taken.');
-  return setPassword({ username, full_name: full_name.trim(), role, active: true, created_at: nowIso() }, password, must);
+  const record = { username, full_name: full_name.trim(), role, active: true, created_at: nowIso(), student_id: student_id || null, student_ids: student_id ? [student_id] : [] };
+  return setPassword(record, password, must);
 }
 const FAILS = new Map();
 async function tryLogin(username, password) {
@@ -250,6 +257,7 @@ addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = 
 const isInstalled = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
 const backupAge = () => SET.last_backup ? Math.floor((Date.now() - new Date(SET.last_backup)) / 864e5) : null;
 function pageHome() {
+  if (isPortalUser()) return pagePortal();
   const st = students().filter(s => s.status !== 'left').length, ba = backupAge(), un = unreadNotifs().length, canEnter = entryAllowed();
   view(SET.school_name, `
     ${!isInstalled() ? `<div class="card"><h2>Put the app on your home screen</h2>${installEvt ? '<button class="btn pri full" id="inst">Install app</button>' : `<p class="muted small">${/iphone|ipad/i.test(navigator.userAgent) ? 'Tap Share, then “Add to Home Screen”.' : 'Browser menu (⋮) → “Install app” / “Add to Home screen”.'}</p>`}</div>` : ''}
@@ -262,6 +270,80 @@ function pageHome() {
     ${atLeast('admin') ? '<a class="btn full" style="margin-bottom:10px" href="#/student/new">&#10133; Register a student</a>' : ''}
     <a class="btn full" href="#/reports">&#128196; Make report cards</a>`, { tab: 'home' });
   if ($('#inst')) $('#inst').onclick = async () => { installEvt.prompt(); await installEvt.userChoice; installEvt = null; route(); };
+}
+
+function pagePortal() {
+  const s = portalStudent();
+  if (!s) {
+    view('My portal', '<div class="card"><h2>Portal not linked</h2><p class="muted small">This account is not connected to a student record yet. Ask the administrator to link it.</p></div>', { back: '#/home', tab: 'home' });
+    return;
+  }
+  const year = SET.current_year, term = SET.current_term, exam = list(SET.exams)[0] || '', currentCtx = studentCtx(s.id, year, term, exam, '');
+  const attendance = Store.all('attendance').filter(r => r.student_id === s.id).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10);
+  const ann = Store.all('announcements').filter(a => a.active !== false && (a.audience === 'all' || a.audience === 'student' || a.audience === 'parent' || a.audience === ME.role)).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 3);
+  const totals = { present: 0, absent: 0, late: 0, excused: 0 };
+  attendance.forEach(r => { if (totals[r.status] !== undefined) totals[r.status]++; });
+  const marks = currentCtx.rows && currentCtx.rows.length ? currentCtx.rows.map(r => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow"><b>${esc(r.subject)}</b></div><div class="small muted">${esc(r.score)} · ${esc(r.grade)}</div></div>`).join('') : '<p class="muted small">No marks for this term yet.</p>';
+  view('My portal', `<div class="card"><div class="row"><div class="grow"><b>${esc(stuName(s))}</b><div class="small muted">${esc(s.admission_no)} · ${esc(className(s.class_id) || 'No class')}</div></div>${ME.role === 'parent' ? '<span class="badge">Parent view</span>' : '<span class="badge">Student view</span>'}</div></div>
+    ${ann.length ? `<div class="card"><h2>School notices</h2>${ann.map(a => `<div class="item n info" style="display:block"><div class="t">${esc(a.title)}</div><div>${esc(a.body)}</div><div class="s">${when(a.created_at)} · ${esc(a.audience === 'all' ? 'Everyone' : a.audience === 'student' ? 'Students' : a.audience === 'parent' ? 'Parents' : a.audience)}</div></div>`).join('')}</div>` : ''}
+    <div class="grid2"><div class="card stat"><b>${currentCtx.average || 0}</b><span>Average</span></div><div class="card stat"><b>${currentCtx.position || '-'}</b><span>Position</span></div></div>
+    <div class="card"><h2>Latest performance</h2>${marks}</div>
+    <div class="card"><h2>Recent attendance</h2>${attendance.length ? attendance.map(r => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow">${esc(r.date)}</div><span class="badge">${ATT_STATUS[r.status] || r.status}</span></div>`).join('') : '<p class="muted small">No attendance recorded yet.</p>'}
+      <div class="small muted" style="margin-top:10px">${totals.present} present · ${totals.absent} absent · ${totals.late} late · ${totals.excused} excused</div></div>
+    <div class="card"><h2>School information</h2><div class="small muted">Term: ${esc(term)} · Year: ${esc(year)}</div></div>
+    <button class="btn full" id="portal-signout" style="margin-top:10px">Sign out</button>`, { tab: 'home' });
+  $('#portal-signout').onclick = () => { endSession(); location.reload(); };
+}
+
+function announcementsForUser() {
+  if (!ME) return [];
+  const role = ME.role;
+  return Store.all('announcements').filter(a => a.active !== false && (a.audience === 'all' || a.audience === role || (role === 'student' && a.audience === 'students') || (role === 'parent' && a.audience === 'parents'))).sort((a, b) => b.created_at.localeCompare(a.created_at));
+}
+
+function pageAnnouncements() {
+  if (!atLeast('admin')) {
+    view('Announcements', '<p class="pad muted">Only administrators can manage announcements.</p>', { back: '#/more', tab: 'more' });
+    return;
+  }
+  const items = Store.all('announcements').sort((a, b) => b.created_at.localeCompare(a.created_at));
+  view('Announcements', `<div class="card">${items.length ? items.map(a => `<div class="item" style="display:block"><div class="row"><div class="grow"><div class="t">${esc(a.title)}</div><div class="s">${when(a.created_at)} · ${esc(a.audience || 'all')}</div></div><div class="row"><button class="btn sm" data-ann-edit="${a.id}">Edit</button><button class="btn sm bad" data-ann-del="${a.id}">Delete</button></div></div><div class="small" style="margin-top:6px">${esc(a.body)}</div></div>`).join('') : '<p class="muted pad">No announcements yet.</p>'}<button class="btn pri full" id="new-ann" style="margin-top:12px">+ New announcement</button></div>`, { back: '#/more', tab: 'more' });
+  if ($('#new-ann')) $('#new-ann').onclick = () => announcementModal();
+  $$('[data-ann-edit]').forEach(btn => btn.onclick = () => announcementModal(Store.get('announcements', btn.dataset.annEdit)));
+  $$('[data-ann-del]').forEach(btn => btn.onclick = () => confirmBox('Delete this announcement?', 'It will be removed for everyone.', async () => {
+    await Store.remove('announcements', btn.dataset.annDel);
+    toast('Removed.');
+    pageAnnouncements();
+  }, 'Delete'));
+}
+
+function announcementModal(item = null) {
+  const isEdit = !!item;
+  const a = item || { audience: 'all', active: true, title: '', body: '' };
+  modal(`<h3>${isEdit ? 'Edit announcement' : 'New announcement'}</h3>
+    <label>Title</label><input id="ann-title" value="${esc(a.title)}">
+    <label>Audience</label><select id="ann-audience">${opts([
+      { v: 'all', t: 'Everyone' },
+      { v: 'student', t: 'Students' },
+      { v: 'parent', t: 'Parents' },
+      { v: 'teacher', t: 'Teachers' },
+      { v: 'admin', t: 'Admins' }
+    ], a.audience || 'all')}</select>
+    <label>Message</label><textarea id="ann-body">${esc(a.body)}</textarea>
+    <label class="chk"><input type="checkbox" id="ann-active" ${a.active === false ? '' : 'checked'}><span>Visible</span></label>
+    <div class="row"><button class="btn grow" id="ann-cancel">Cancel</button><button class="btn pri grow" id="ann-save">Save</button></div>`, () => {
+      $('#ann-cancel').onclick = closeModal;
+      $('#ann-save').onclick = async () => {
+        const title = $('#ann-title').value.trim();
+        const body = $('#ann-body').value.trim();
+        if (!title || !body) return toast('Add both a title and a message.');
+        const rec = { ...(item || {}), id: item ? item.id : Core.uid(), title, body, audience: $('#ann-audience').value || 'all', active: $('#ann-active').checked, created_at: item ? item.created_at : nowIso(), updated_at: nowIso() };
+        await Store.put('announcements', rec);
+        closeModal();
+        toast('Announcement saved.');
+        pageAnnouncements();
+      };
+  });
 }
 
 /* ================= students ================= */
@@ -390,6 +472,43 @@ function paint() {
   });
 }
 
+/* ================= attendance ================= */
+let AT = { cls: '', date: '' };
+const ATT_STATUS = { present: 'Present', absent: 'Absent', late: 'Late', excused: 'Excused' };
+const attendanceKey = (studentId, date) => `${date}:${studentId}`;
+function pageAttendance() {
+  if (!atLeast('admin')) {
+    view('Attendance', '<p class="pad muted">Only administrators can manage attendance.</p>', { back: '#/more', tab: 'more' });
+    return;
+  }
+  const cl = classes(); if (!cl.length) return view('Attendance', '<p class="pad muted">Add a class before recording attendance.</p>', { back: '#/more', tab: 'more' });
+  AT.cls = cl.some(c => c.id === AT.cls) ? AT.cls : cl[0].id;
+  AT.date = AT.date || new Date().toISOString().slice(0, 10);
+  const summary = () => { const rows = Store.all('attendance').filter(r => r.class_id === AT.cls && r.date === AT.date); const counts = { present: 0, absent: 0, late: 0, excused: 0 }; rows.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; }); return counts; };
+  const counts = summary();
+  view('Attendance', `<div class="card"><div class="grid2"><div><label>Class</label><select id="ac">${opts(cl.map(c => ({ v: c.id, t: c.name })), AT.cls)}</select></div><div><label>Date</label><input id="ad" type="date" value="${esc(AT.date)}"></div></div>
+    <div class="small muted" style="margin-top:8px">${counts.present} present · ${counts.absent} absent · ${counts.late} late · ${counts.excused} excused</div>
+    <div id="att-list" style="margin-top:12px"></div></div>`, { back: '#/more', tab: 'more' });
+  const rows = classStudents(AT.cls);
+  const existing = new Map(Store.all('attendance').filter(r => r.class_id === AT.cls && r.date === AT.date).map(r => [r.student_id, r]));
+  $('#att-list').innerHTML = rows.map(s => {
+    const rec = existing.get(s.id);
+    const make = (status, label) => `<button class="btn sm ${rec && rec.status === status ? 'on' : ''}" data-att-sid="${s.id}" data-att-status="${status}">${label}</button>`;
+    return `<div class="row" style="padding:10px 0;border-bottom:1px solid var(--bd)"><div class="grow"><b>${esc(stuName(s))}</b><div class="small muted">${esc(s.admission_no)}</div></div><div class="row wrap">${make('present', 'P')}${make('absent', 'A')}${make('late', 'L')}${make('excused', 'E')}</div></div>`;
+  }).join('') || '<p class="muted pad">No students in this class.</p>';
+  $('#ac').onchange = e => { AT.cls = e.target.value; pageAttendance(); };
+  $('#ad').onchange = e => { AT.date = e.target.value || new Date().toISOString().slice(0, 10); pageAttendance(); };
+  $$('[data-att-status]').forEach(btn => btn.onclick = async () => {
+    const sid = btn.dataset.attSid, status = btn.dataset.attStatus, stu = Store.get('students', sid);
+    if (!stu) return;
+    const id = attendanceKey(sid, AT.date);
+    const rec = { id, student_id: sid, class_id: AT.cls, date: AT.date, status, note: '', recorded_by: ME.username, updated_at: nowIso() };
+    await Store.put('attendance', rec);
+    await logAct('attendance', stu, `${AT.date} marked ${ATT_STATUS[status]}`);
+    pageAttendance();
+  });
+}
+
 /* ================= reports ================= */
 let RP = { mode: 'card' };
 function results(studs, year, term, exam) {
@@ -437,7 +556,7 @@ function pageReports() {
 function pageMore() {
   const row = (h, i, t, s) => `<a class="item" href="${h}"><span style="font-size:22px">${i}</span><div class="grow"><div class="t">${t}</div><div class="s">${s}</div></div><span class="chev">›</span></a>`;
   const un = unreadNotifs().length, L = lockRec();
-  view('More', row('#/notifications', '&#128276;', 'Notifications', un ? `${un} unread` : 'All caught up') + row('#/locks', L.locked ? '&#128274;' : '&#128275;', 'Exam entry control', L.locked ? 'LOCKED' : 'Open')
+  view('More', row('#/notifications', '&#128276;', 'Notifications', un ? `${un} unread` : 'All caught up') + (atLeast('admin') ? row('#/attendance', '&#128198;', 'Attendance', 'Today’s class attendance') + row('#/announcements', '&#128238;', 'Announcements', 'School notices for families') : '') + row('#/locks', L.locked ? '&#128274;' : '&#128275;', 'Exam entry control', L.locked ? 'LOCKED' : 'Open')
     + (atLeast('admin') ? row('#/users', '&#128101;', 'Users &amp; roles', 'Teachers, admins, passwords') + row('#/logs', '&#128065;', 'Activity log', 'Who viewed or changed what')
       + row('#/subjects', '&#128218;', 'Subjects &amp; rules', 'Compulsory/optional, 8-4-4 or CBC') + row('#/classes', '&#127979;', 'Classes', 'Form 3, Form 4, Grade 10 …') + row('#/settings', '&#9881;', 'Settings', 'School, term, grading') : '')
     + row('#/sync', '&#9729;', 'Cloud sync', Cloud.enabled() ? (Cloud.status.state === 'ok' ? 'Synced' : Cloud.status.msg || Cloud.status.state) : 'Not connected') + row('#/data', '&#128190;', 'Backup &amp; data', atLeast('admin') ? 'Backup, share updates, CSV' : 'Share my work, receive updates') + row('#/account', '&#128100;', 'My account', 'Change password')
@@ -475,22 +594,28 @@ function pageNotifications() {
 function pageUsers() {
   view('Users & roles', `<div class="card">${users().map(u => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow"><b>${esc(u.full_name)}</b> ${u.id === ME.id ? '<span class="small muted">(you)</span>' : ''}<div class="small muted">@${esc(u.username)} · <span class="badge ${u.role === 'teacher' ? 'opt' : ''}">${u.role}</span>${u.active === false ? ' · disabled' : ''}</div></div>${ROLE[u.role] <= ROLE[ME.role] && (u.role !== 'superadmin' || ME.role === 'superadmin') ? `<button class="btn sm" data-u="${u.id}">Edit</button>` : ''}</div>`).join('')}
     <button class="btn pri full" id="nu" style="margin-top:12px">+ Add user</button></div><p class="muted small pad">New users must choose their own password the first time they sign in. Teachers can enter marks and make reports; admins also register students and manage settings; only the super admin controls the exam-entry lock.</p>`, { back: '#/more', tab: 'more' });
-  const roles = () => ME.role === 'superadmin' ? ['teacher', 'admin', 'superadmin'] : ['teacher'];
+  const roles = () => ME.role === 'superadmin' ? ['teacher', 'admin', 'superadmin', 'student', 'parent'] : ['teacher', 'student', 'parent'];
   const form = u => { const n = !u; u = u || { role: 'teacher', active: true };
+    const linkedStudents = students().map(s => ({ v: s.id, t: `${stuName(s)} (${s.admission_no})` }));
     modal(`<h3>${n ? 'Add user' : 'Edit user'}</h3><label>Full name</label><input id="fn" value="${esc(u.full_name)}"><label>Username</label><input id="un" value="${esc(u.username)}" ${n ? '' : 'disabled'} autocapitalize="none">
-      <label>Role</label><select id="rl" ${n || ME.role === 'superadmin' ? '' : 'disabled'}>${opts(roles(), u.role)}</select><label>${n ? 'Temporary password (6+)' : 'Reset password (leave empty to keep)'}</label><input id="pw" type="text" autocomplete="off">
+      <label>Role</label><select id="rl" ${n || ME.role === 'superadmin' ? '' : 'disabled'}>${opts(roles(), u.role)}</select>
+      ${['student', 'parent'].includes(u.role || '') || (n && ['student', 'parent'].includes((u.role || 'teacher'))) ? `<label>Linked student</label><select id="std"><option value="">None</option>${opts(linkedStudents, u.student_id || '')}</select>` : ''}
+      <label>${n ? 'Temporary password (6+)' : 'Reset password (leave empty to keep)'}</label><input id="pw" type="text" autocomplete="off">
       ${n ? '' : `<label class="chk"><input type="checkbox" id="ac" ${u.active !== false ? 'checked' : ''} ${u.id === ME.id ? 'disabled' : ''}><span>Account active</span></label>`}<div class="row"><button class="btn grow" id="x">Cancel</button><button class="btn pri grow" id="ok">Save</button></div>`, () => {
       $('#x').onclick = closeModal;
       $('#ok').onclick = async () => { try {
-        if (Cloud.enabled()) await cloudUserSave(n, u); else if (n) await createUser({ username: $('#un').value, full_name: $('#fn').value, role: $('#rl').value, password: $('#pw').value });
-        else { const act = $('#ac').checked; if (u.role === 'superadmin' && (!act || $('#rl').value !== 'superadmin') && users().filter(x => x.role === 'superadmin' && x.active !== false).length < 2) throw new Error('There must be at least one active super admin.');
-          let r = await Store.put('users', { ...u, full_name: $('#fn').value.trim() || u.full_name, role: $('#rl').value, active: act }); if ($('#pw').value) { if ($('#pw').value.length < 6) throw new Error('Password must be at least 6 characters.'); await setPassword(r, $('#pw').value, true); } }
+        const role = $('#rl').value;
+        const studentId = ['student', 'parent'].includes(role) ? $('#std')?.value || null : null;
+        if (Cloud.enabled()) await cloudUserSave(n, u, studentId); else if (n) await createUser({ username: $('#un').value, full_name: $('#fn').value, role, password: $('#pw').value, student_id: studentId });
+        else { const act = $('#ac').checked; if (u.role === 'superadmin' && (!act || role !== 'superadmin') && users().filter(x => x.role === 'superadmin' && x.active !== false).length < 2) throw new Error('There must be at least one active super admin.');
+          let r = await Store.put('users', { ...u, full_name: $('#fn').value.trim() || u.full_name, role, active: act, student_id: studentId || null, student_ids: studentId ? [studentId] : [] }); if ($('#pw').value) { if ($('#pw').value.length < 6) throw new Error('Password must be at least 6 characters.'); await setPassword(r, $('#pw').value, true); } }
         closeModal(); pageUsers(); } catch (e) { toast(e.message); } }; }); };
   $('#nu').onclick = () => form(); $$('[data-u]').forEach(b => b.onclick = () => form(Store.get('users', b.dataset.u)));
 }
-async function cloudUserSave(n, u) {
-  if (n) await Cloud.adminUsers({ action: 'create', username: $('#un').value, full_name: $('#fn').value, role: $('#rl').value, password: $('#pw').value });
-  else { await Cloud.adminUsers({ action: 'update', user_id: u.id, full_name: $('#fn').value, role: $('#rl').value, active: $('#ac').checked }); if ($('#pw').value) await Cloud.adminUsers({ action: 'reset', user_id: u.id, password: $('#pw').value }); }
+async function cloudUserSave(n, u, studentId = null) {
+  const body = { action: n ? 'create' : 'update', username: $('#un').value, full_name: $('#fn').value, role: $('#rl').value, student_id: studentId };
+  if (n) await Cloud.adminUsers({ ...body, password: $('#pw').value });
+  else { await Cloud.adminUsers({ ...body, user_id: u.id, active: $('#ac').checked }); if ($('#pw').value) await Cloud.adminUsers({ action: 'reset', user_id: u.id, password: $('#pw').value }); }
   await Cloud.pullProfiles();
 }
 function pageAccount() {
@@ -665,13 +790,16 @@ function onCloudChanged(changed, rejected) {
 }
 
 /* ================= router & boot ================= */
-const GUARD = { users: 'admin', logs: 'admin', settings: 'admin', subjects: 'admin', classes: 'admin' };
+const GUARD = { users: 'admin', logs: 'admin', settings: 'admin', subjects: 'admin', classes: 'admin', attendance: 'admin', announcements: 'admin' };
 function route() {
   if (!ME) return; const h = location.hash.replace(/^#\/?/, '') || 'home', [p, a, b] = h.split('/');
-  if ((GUARD[p] && !atLeast(GUARD[p])) || (p === 'student' && (a === 'new' || b === 'edit') && !atLeast('admin'))) { toast('You do not have access to that page.'); location.hash = '#/home'; return; }
-  const pages = { home: pageHome, students: pageStudents, student: () => (a === 'new' || b === 'edit') ? pageStudentForm(a === 'new' ? 'new' : a) : pageProfile(a), marks: pageMarks, reports: pageReports, more: pageMore, locks: pageLocks, notifications: pageNotifications,
+  if (isPortalUser()) {
+    if (!['portal', 'account', 'notifications', 'home'].includes(p)) { location.hash = '#/portal'; return; }
+  }
+  if ((GUARD[p] && !atLeast(GUARD[p])) || (p === 'student' && (a === 'new' || b === 'edit') && !atLeast('admin'))) { toast('You do not have access to that page.'); location.hash = isPortalUser() ? '#/portal' : '#/home'; return; }
+  const pages = { home: pageHome, portal: pagePortal, students: pageStudents, student: () => (a === 'new' || b === 'edit') ? pageStudentForm(a === 'new' ? 'new' : a) : pageProfile(a), marks: pageMarks, attendance: pageAttendance, announcements: pageAnnouncements, reports: pageReports, more: pageMore, locks: pageLocks, notifications: pageNotifications,
     users: pageUsers, account: pageAccount, sync: pageSync, logs: pageLogs, subjects: pageSubjects, classes: pageClasses, settings: pageSettings, data: pageData };
-  (pages[p] || pageHome)();
+  (pages[p] || (isPortalUser() ? pagePortal : pageHome))();
 }
 addEventListener('hashchange', () => { closeModal(); route(); });
 (async function boot() {

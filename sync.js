@@ -33,9 +33,16 @@ const Cloud = (() => {
     const j = await raw('/auth/v1/token?grant_type=password', { method: 'POST', body: { email: emailFor(username), password } });
     saveSession(j); return j.user.id;
   }
-  async function pullProfiles() {
-    const rows = await api('/rest/v1/profiles?select=user_id,username,full_name,role,active,must_change,updated_at');
-    await Store.replaceAll('users', rows.map(p => ({ id: p.user_id, username: p.username, full_name: p.full_name, role: p.role, active: p.active, must_change: p.must_change, updated_at: p.updated_at })));
+  async function accountInfo() { return api('/functions/v1/admin-users', { method: 'POST', body: { action: 'status' } }); }
+  async function publicAccountRequest(body) { return raw('/functions/v1/admin-users', { method: 'POST', body }); }
+  async function pullProfiles(portalInfo = null) {
+    const rows = await api('/rest/v1/profiles?select=user_id,username,full_name,role,active,must_change,student_id,requested_role,updated_at');
+    const current = sess();
+    if (!portalInfo && current) {
+      const local = Store.get('users', current.user_id);
+      if (local && ['student', 'parent'].includes(local.role)) portalInfo = await accountInfo();
+    }
+    await Store.replaceAll('users', rows.map(p => ({ id: p.user_id, username: p.username, full_name: p.full_name, role: p.role, active: p.active, must_change: p.must_change, student_id: p.student_id || null, requested_role: p.requested_role || null, portal_student: portalInfo && current && p.user_id === current.user_id ? portalInfo.student : null, updated_at: p.updated_at })));
     return rows;
   }
   async function pull() {
@@ -71,7 +78,11 @@ const Cloud = (() => {
     setStatus('syncing');
     busy = (async () => {
       try {
-        const p = await push(); await pullProfiles(); const changed = await pull();
+        const current = sess() && Store.get('users', sess().user_id);
+        const portal = current && ['student', 'parent'].includes(current.role);
+        const p = portal ? { rejected: [] } : await push();
+        await pullProfiles(portal ? await accountInfo() : null);
+        const changed = await pull();
         status.last = new Date().toISOString(); setStatus('ok'); cb.changed(changed, p.rejected); return { changed, rejected: p.rejected };
       } catch (e) {
         if (e.authLost) { setStatus('error', 'Signed out by the server'); cb.authLost(); } else if (isNet(e)) setStatus('offline', 'No connection'); else setStatus('error', e.message);
@@ -88,10 +99,11 @@ const Cloud = (() => {
     Store.hooks.write.push(() => { clearTimeout(deb); deb = setTimeout(syncNow, 2500); });
   }
   const adminUsers = body => api('/functions/v1/admin-users', { method: 'POST', body });
+  const publicUsers = body => raw('/functions/v1/admin-users', { method: 'POST', body });
   async function changePassword(pw) { await api('/auth/v1/user', { method: 'PUT', body: { password: pw } }); await api('/rest/v1/rpc/clear_must_change', { method: 'POST', body: {} }); }
   const resetCursor = () => localStorage.removeItem(CUR);
   const signOut = () => localStorage.removeItem(SES);
   const connect = c => localStorage.setItem(CFG, JSON.stringify({ url: c.url.trim(), anon: c.anon.trim(), domain: (c.domain || 'school-records.app').trim().toLowerCase() }));
   const disconnect = () => { [CFG, SES, CUR, REJ].forEach(k => localStorage.removeItem(k)); };
-  return { enabled, cfg, status, rejected, signIn, signOut, syncNow, start, pull, push, pullProfiles, adminUsers, changePassword, resetCursor, connect, disconnect, emailFor, hasSession: () => !!sess(), on: (k, f) => { cb[k] = f; }, clearRejected: () => localStorage.removeItem(REJ) };
+  return { enabled, cfg, status, rejected, signIn, signOut, syncNow, start, pull, push, pullProfiles, accountInfo, adminUsers, publicAccountRequest, changePassword, resetCursor, connect, disconnect, emailFor, hasSession: () => !!sess(), on: (k, f) => { cb[k] = f; }, clearRejected: () => localStorage.removeItem(REJ) };
 })();

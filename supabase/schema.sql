@@ -8,12 +8,24 @@ create table if not exists public.profiles (
   user_id     uuid primary key references auth.users(id) on delete cascade,
   username    text not null unique check (username ~ '^[a-z0-9._-]{3,30}$'),
   full_name   text not null,
-  role        text not null check (role in ('teacher','admin','superadmin')),
+  role        text not null check (role in ('teacher','admin','superadmin','student','parent','guest')),
+  requested_role text check (requested_role in ('teacher','admin','student','parent')),
+  student_id  text,
   active      boolean not null default true,
   must_change boolean not null default false,
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
+
+-- Safe for projects created with the older staff-only profile schema.
+alter table public.profiles add column if not exists requested_role text;
+alter table public.profiles add column if not exists student_id text;
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('teacher','admin','superadmin','student','parent','guest'));
+alter table public.profiles drop constraint if exists profiles_requested_role_check;
+alter table public.profiles add constraint profiles_requested_role_check
+  check (requested_role is null or requested_role in ('teacher','admin','student','parent'));
 
 -- every app record (students, marks, locks, notifications, logs, photos ...) is one row
 create table if not exists public.records (
@@ -28,20 +40,59 @@ create table if not exists public.records (
 );
 create index if not exists records_server_at_idx on public.records (server_at);
 
+-- Public-facing registration/reset requests are written only by the service-role Edge Function.
+create table if not exists public.access_requests (
+  id          uuid primary key default gen_random_uuid(),
+  kind        text not null check (kind in ('role','password_reset')),
+  user_id     uuid references auth.users(id) on delete cascade,
+  username    text not null,
+  full_name   text,
+  requested_role text,
+  ip_hash     text,
+  status      text not null default 'pending' check (status in ('pending','approved','denied','resolved')),
+  created_at  timestamptz not null default now(),
+  resolved_at timestamptz
+);
+create index if not exists access_requests_pending_idx on public.access_requests (status, created_at desc);
+create index if not exists access_requests_ip_idx on public.access_requests (ip_hash, created_at desc);
+
 alter table public.profiles enable row level security;
 alter table public.records  enable row level security;
+alter table public.access_requests enable row level security;
 
 create or replace function public.is_active_member() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.profiles where user_id = auth.uid() and active)
 $$;
 
-drop policy if exists profiles_read on public.profiles;
-create policy profiles_read on public.profiles for select to authenticated using (public.is_active_member());
-drop policy if exists records_read on public.records;
-create policy records_read  on public.records  for select to authenticated using (public.is_active_member());
+create or replace function public.is_staff_member() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where user_id = auth.uid() and active and role in ('teacher','admin','superadmin'))
+$$;
 
-revoke all on public.profiles, public.records from anon, authenticated;
+drop policy if exists profiles_read on public.profiles;
+create policy profiles_read on public.profiles for select to authenticated
+  using (user_id = auth.uid() or public.is_staff_member());
+drop policy if exists records_read on public.records;
+create policy records_read on public.records for select to authenticated using (
+  public.is_staff_member()
+  or exists (
+    select 1 from public.profiles p
+    where p.user_id = auth.uid() and p.active and p.role in ('student','parent') and p.student_id is not null
+      and (
+        (records.store in ('marks','attendance','enrollments') and records.data->>'student_id' = p.student_id)
+        or records.store in ('classes','subjects','groups','rules','settings')
+        or (records.store = 'announcements' and coalesce((records.data->>'active')::boolean, true)
+            and (records.data->>'audience' = 'all' or records.data->>'audience' = p.role
+                 or (p.role = 'student' and records.data->>'audience' = 'students')
+                 or (p.role = 'parent' and records.data->>'audience' = 'parents')))
+      )
+  )
+);
+drop policy if exists access_requests_no_client_access on public.access_requests;
+create policy access_requests_no_client_access on public.access_requests for all to authenticated using (false) with check (false);
+
+revoke all on public.profiles, public.records, public.access_requests from anon, authenticated;
 grant select on public.profiles, public.records to authenticated;      -- no insert/update/delete for clients
 
 -- ---------------------------------------------------------------------
@@ -80,7 +131,7 @@ begin
       allowed := false;                                reason := 'accounts are managed by the server';
     elsif st = 'logs' then
       allowed := (d->>'user_id') = me.user_id::text;   reason := 'log entries must belong to you';
-    elsif st in ('settings','classes','subjects','groups','rules','students','enrollments','photos') then
+    elsif st in ('settings','classes','subjects','groups','rules','students','enrollments','photos','announcements') then
       allowed := me.role in ('admin','superadmin');    reason := 'administrators only';
     elsif st = 'marks' then
       if jsonb_typeof(d->'score') is distinct from 'number' then
