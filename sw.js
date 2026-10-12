@@ -1,6 +1,6 @@
-const VERSION = 'v1';
+const VERSION = 'v3';
 const CACHE = 'school-records-' + VERSION;
-const ASSETS = ['./', './index.html', './style.css', './core.js', './store.js', './app.js', './manifest.webmanifest',
+const ASSETS = ['./', './index.html', './style.css', './core.js', './store.js', './sync.js', './app.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {

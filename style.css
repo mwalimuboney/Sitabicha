@@ -46,3 +46,14 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--p);border-color:
 .seg{display:flex;gap:6px;flex-wrap:wrap}.seg button{flex:1;min-width:30%}
 .seg .on{background:var(--p);color:#fff}
 table.t{width:100%;border-collapse:collapse;font-size:14px}table.t td,table.t th{padding:8px 4px;border-bottom:1px solid var(--bd);text-align:left}
+
+#bell{position:relative}#bn{position:absolute;top:2px;right:2px;background:#f04438;color:#fff;border-radius:99px;font-size:11px;min-width:18px;height:18px;line-height:18px;text-align:center;padding:0 4px}
+.av{width:42px;height:56px;border-radius:8px;object-fit:cover;background:#e6f4f1;flex:none;display:flex;align-items:center;justify-content:center;color:var(--pd);font-weight:700}
+.ph{width:120px;height:160px;border-radius:12px;object-fit:cover;background:#e6f4f1;display:flex;align-items:center;justify-content:center;color:var(--mu);font-size:13px;flex:none}
+.strip{background:#fef3f2;color:var(--bad);padding:8px 14px;font-size:14px;text-align:center}.strip.ok{background:#ecfdf3;color:var(--good)}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:6px 10px;font-size:15px}.kv div:nth-child(odd){color:var(--mu)}
+.n{border-left:4px solid var(--p)}.n.unread{background:#f0fdfa}.n.lock{border-left-color:var(--bad)}.n.unlock{border-left-color:var(--good)}
+.lg{font-size:13px;padding:8px 0;border-bottom:1px solid var(--bd)}
+
+.sync-ok{color:#a7f3d0}.sync-run{color:#fde68a;animation:sp 1s linear infinite}.sync-off{color:#d1d5db;opacity:.7}.sync-err{color:#fecaca}.sync-idle{color:#fff}
+@keyframes sp{50%{opacity:.4}}
