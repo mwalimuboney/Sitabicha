@@ -379,12 +379,12 @@ function pageProfile(id) {
       <div class="row" style="margin-top:12px">${s.guardian_phone ? `<a class="btn sm grow" href="tel:${esc(s.guardian_phone)}">&#128222; Call</a>` : ''}${waLink(s.guardian_phone) ? `<a class="btn sm grow" href="${waLink(s.guardian_phone)}" target="_blank" rel="noopener">WhatsApp</a>` : ''}</div></div>
     ${atLeast('admin') && s.medical_notes ? `<div class="card"><h2>Medical notes</h2><p>${esc(s.medical_notes)}</p></div>` : ''}
     <div class="card"><h2>Subjects (${subs.length})</h2><div class="small">${subs.map(x => esc(x.name)).join(', ') || '—'}</div><div class="muted small" style="margin-top:6px">${marksN} marks recorded</div></div>
-    <button class="btn pri full" id="rc">&#128196; Report card</button>${atLeast('admin') ? '<a class="btn full" style="margin-top:10px" href="#/student/' + id + '/edit">&#9998; Edit details</a>' : ''}
+    <button class="btn pri full" id="rc">&#128196; Report card</button>${atLeast('admin') ? '<a class="btn full" style="margin-top:10px" href="#/student/' + id + '/edit">&#9998; Edit details</a><a class="btn full" style="margin-top:8px" href="#/student-profile-builder/' + id + '">📋 Profile Builder</a>' : ''}
     ${logs.length ? `<div class="card" style="margin-top:12px"><h2>Recent activity on this profile</h2>${logs.map(l => `<div class="lg"><b>${esc(l.username)}</b> ${esc(l.action)} <span class="muted">· ${when(l.ts)}</span>${l.detail ? `<div class="muted">${esc(l.detail)}</div>` : ''}</div>`).join('')}</div>` : ''}`, { back: '#/students', tab: 'students' });
   $('#rc').onclick = () => { RP = { ...RP, mode: 'card', cls: s.class_id || RP.cls, stu: id }; location.hash = '#/reports'; };
 }
 const nextAdmission = () => { const y = SET.current_year; let max = 0; Store.all('students').forEach(s => { const m = String(s.admission_no).match(new RegExp('^' + y + '-(\\d+)$')); if (m) max = Math.max(max, +m[1]); }); return `${y}-${String(max + 1).padStart(4, '0')}`; };
-const FIELDS = ['admission_no', 'upi', 'first_name', 'middle_name', 'last_name', 'gender', 'dob', 'class_id', 'stream', 'residence', 'year_admitted', 'previous_school', 'guardian_name', 'guardian_relation', 'guardian_phone', 'guardian_phone2', 'address', 'medical_notes', 'status'];
+const FIELDS = ['admission_no', 'upi', 'first_name', 'middle_name', 'last_name', 'gender', 'dob', 'class_id', 'stream', 'residence', 'year_admitted', 'previous_school', 'guardian_name', 'guardian_relation', 'guardian_phone', 'guardian_phone2', 'address', 'medical_notes', 'status', 'guardian_callmebot_apikey'];
 const diff = (a, b) => FIELDS.filter(k => (a[k] || '') !== (b[k] || '')).map(k => k === 'medical_notes' ? 'medical_notes changed' : k === 'class_id' ? `class: ${className(a[k]) || '-'} → ${className(b[k]) || '-'}` : `${k}: ${a[k] || '-'} → ${b[k] || '-'}`).join('; ');
 let PH;   // photo chosen in the form: undefined = unchanged, null = remove, {full,thumb} = new
 function pageStudentForm(id) {
@@ -401,7 +401,7 @@ function pageStudentForm(id) {
     <div class="card"><h2>School</h2><label>Class</label><select id="cl"><option value="">No class</option>${opts(classes().map(c => ({ v: c.id, t: `${c.name} (${sysOfClass(c.id)})` })), s.class_id)}</select><div id="sysnote" class="muted small" style="margin-top:4px"></div>
       ${f('stream', 'Stream (e.g. East)')}<div class="grid2"><div><label>Residence</label><select id="f_residence">${opts(['Day', 'Boarding'], s.residence)}</select></div><div>${f('year_admitted', 'Year admitted', 'type="number" inputmode="numeric"')}</div></div>
       ${f('previous_school', 'Previous school')}<label>Status</label><select id="f_status"><option value="active" ${s.status !== 'left' ? 'selected' : ''}>Active</option><option value="left" ${s.status === 'left' ? 'selected' : ''}>Left school</option></select></div>
-    <div class="card"><h2>Guardian</h2>${f('guardian_name', 'Name')}${f('guardian_relation', 'Relationship (e.g. Mother)')}${f('guardian_phone', 'Phone', 'type="tel"')}${f('guardian_phone2', 'Other phone', 'type="tel"')}${f('address', 'Home address / area')}
+    <div class="card"><h2>Guardian</h2>${f('guardian_name', 'Name')}${f('guardian_relation', 'Relationship (e.g. Mother)')}${f('guardian_phone', 'Phone', 'type="tel"')}${f('guardian_phone2', 'Other phone', 'type="tel"')}${f('guardian_callmebot_apikey', 'CallMeBot API key (guardian WhatsApp key — guardian gets this by texting CallMeBot once)')}${f('address', 'Home address / area')}
       <label>Medical notes (allergies, conditions — admins only)</label><textarea id="f_medical_notes">${esc(s.medical_notes)}</textarea></div>
     <div class="card"><h2>Optional subjects</h2><div class="muted small">Compulsory subjects are added automatically.</div><div id="opt"></div><div id="err"></div></div>
     <button class="btn pri full" id="save">Save student</button>${isNew ? '' : '<button class="btn bad full" id="del" style="margin-top:10px">Delete student</button>'}`, { back: isNew ? '#/students' : '#/student/' + id, tab: 'students' });
@@ -562,7 +562,7 @@ function pageMore() {
   view('More', row('#/notifications', '&#128276;', 'Notifications', un ? `${un} unread` : 'All caught up') + (atLeast('admin') ? row('#/attendance', '&#128198;', 'Attendance', 'Today’s class attendance') + row('#/announcements', '&#128238;', 'Announcements', 'School notices for families') : '') + row('#/locks', L.locked ? '&#128274;' : '&#128275;', 'Exam entry control', L.locked ? 'LOCKED' : 'Open')
     + (atLeast('admin') ? row('#/users', '&#128101;', 'Users &amp; roles', 'Teachers, admins, passwords') + row('#/logs', '&#128065;', 'Activity log', 'Who viewed or changed what')
       + row('#/subjects', '&#128218;', 'Subjects &amp; rules', 'Compulsory/optional, 8-4-4 or CBC') + row('#/classes', '&#127979;', 'Classes', 'Form 3, Form 4, Grade 10 …') + row('#/settings', '&#9881;', 'Settings', 'School, term, grading') : '')
-    + row('#/timetable', '&#128198;', 'Timetable', 'Weekly class schedule') + row('#/assignments', '&#128221;', 'Assignments', 'Homework tracker') + row('#/staff', '&#128101;', 'Staff HR', 'Contracts & leave') + row('#/student-leaves', '&#128196;', 'Student Leave-Outs', 'Notify parent instantly') + row('#/fees', '&#128181;', 'Fee Management', 'Payments & receipts') + row('#/notification-settings', '&#128276;', 'Notifications & Alarms', 'Push + class bell') + row('#/share-app', '&#128247;', 'Share App / Branding', 'QR code for parents & staff') + (atLeast('superadmin') ? row('#/security-log', '&#9888;', 'Security log', 'Threats & anomalies') : '') + row('#/sync', '&#9729;', 'Cloud sync', Cloud.enabled() ? (Cloud.status.state === 'ok' ? 'Synced' : Cloud.status.msg || Cloud.status.state) : 'Not connected') + row('#/data', '&#128190;', 'Backup &amp; data', atLeast('admin') ? 'Backup, share updates, CSV' : 'Share my work, receive updates') + row('#/account', '&#128100;', 'My account', 'Change password')
+    + row('#/timetable', '&#128198;', 'Timetable', 'Weekly class schedule') + row('#/assignments', '&#128221;', 'Assignments', 'Homework tracker') + row('#/staff', '&#128101;', 'Staff HR', 'Contracts & leave') + row('#/student-leaves', '&#128196;', 'Student Leave-Outs', 'Notify parent instantly') + row('#/fees', '&#128181;', 'Fee Management', 'Payments & receipts') + row('#/notification-settings', '&#128276;', 'Notifications & Alarms', 'Push + class bell') + I18n.toggleHtml() + row('#/share-app', '&#128247;', 'Share App / Branding', 'QR code for parents & staff') + PluginLoader.getMenuItems().filter(m=>!m.role||atLeast(m.role)).map(m=>row(m.hash, m.icon, m.title, m.sub)).join('') + (atLeast('superadmin') ? row('#/security-log', '&#9888;', 'Security log', 'Threats & anomalies') + row('#/plugins', '🔌', 'Plugins', 'Enable/disable features') : '') + row('#/sync', '&#9729;', 'Cloud sync', Cloud.enabled() ? (Cloud.status.state === 'ok' ? 'Synced' : Cloud.status.msg || Cloud.status.state) : 'Not connected') + row('#/data', '&#128190;', 'Backup &amp; data', atLeast('admin') ? 'Backup, share updates, CSV' : 'Share my work, receive updates') + row('#/account', '&#128100;', 'My account', 'Change password')
     + `<button class="btn full" id="so" style="margin-top:8px">Sign out</button><p class="muted small pad">School Records v${APP_VERSION} · works offline · data is stored on this phone.</p>`, { tab: 'more' });
   $('#so').onclick = () => { endSession(); location.reload(); };
 }
@@ -595,7 +595,8 @@ function pageNotifications() {
 
 /* ================= users & account ================= */
 function pageUsers() {
-  view('Users & roles', `<div class="card">${users().map(u => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow"><b>${esc(u.full_name)}</b> ${u.id === ME.id ? '<span class="small muted">(you)</span>' : ''}<div class="small muted">@${esc(u.username)} · <span class="badge ${u.role === 'teacher' ? 'opt' : ''}">${u.role}</span>${u.active === false ? ' · disabled' : ''}</div></div>${ROLE[u.role] <= ROLE[ME.role] && (u.role !== 'superadmin' || ME.role === 'superadmin') ? `<button class="btn sm" data-u="${u.id}">Edit</button>` : ''}</div>`).join('')}
+  const pendingApps=Store.all('role_applications').filter(a=>a.status==='pending').length;
+  view('Users & roles', `${pendingApps?`<div class="msg warn" onclick="location.hash='#/applications'" style="cursor:pointer">⚠️ ${pendingApps} pending role application${pendingApps>1?'s':''}. <b>Review →</b></div>`:''}<div class="card">${(ME.role==='superadmin'?Store.all('users'):users()).sort((a,b)=>(ROLE[b.role]||0)-(ROLE[a.role]||0)||a.full_name.localeCompare(b.full_name)).map(u => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow"><b>${esc(u.full_name)}</b> ${u.id === ME.id ? '<span class="small muted">(you)</span>' : ''}<div class="small muted">@${esc(u.username)} · <span class="badge ${u.role === 'teacher' ? 'opt' : ''}">${u.role}</span>${u.active === false ? ' · disabled' : ''}</div></div>${ROLE[u.role] <= ROLE[ME.role] && (u.role !== 'superadmin' || ME.role === 'superadmin') ? `<div class='row' style='gap:4px'><button class='btn sm' data-u='${u.id}'>Edit</button>${ME.role==='superadmin'&&u.id!==ME.id?`<button class='btn sm ${u.active!==false?'bad':'pri'}' data-toggle-u='${u.id}'>${u.active!==false?'Suspend':'Activate'}</button>`:''}</div>` : ''}</div>`).join('')}
     <button class="btn pri full" id="nu" style="margin-top:12px">+ Add user</button></div><p class="muted small pad">New users must choose their own password the first time they sign in. Teachers can enter marks and make reports; admins also register students and manage settings; only the super admin controls the exam-entry lock.</p>`, { back: '#/more', tab: 'more' });
   const roles = () => ME.role === 'superadmin' ? ['teacher', 'admin', 'superadmin', 'student', 'parent'] : ['teacher', 'student', 'parent'];
   const form = u => { const n = !u; u = u || { role: 'teacher', active: true };
@@ -614,6 +615,7 @@ function pageUsers() {
           let r = await Store.put('users', { ...u, full_name: $('#fn').value.trim() || u.full_name, role, active: act, student_id: studentId || null, student_ids: studentId ? [studentId] : [] }); if ($('#pw').value) { if ($('#pw').value.length < 6) throw new Error('Password must be at least 6 characters.'); await setPassword(r, $('#pw').value, true); } }
         closeModal(); pageUsers(); } catch (e) { toast(e.message); } }; }); };
   $('#nu').onclick = () => form(); $$('[data-u]').forEach(b => b.onclick = () => form(Store.get('users', b.dataset.u)));
+  $$('[data-toggle-u]').forEach(b => b.onclick = async () => { const u=Store.get('users',b.dataset.toggleU); if(!u) return; const active=u.active!==false; await Store.put('users',{...u,active:!active}); toast(active?'User suspended.':'User activated.'); pageUsers(); });
 }
 async function cloudUserSave(n, u, studentId = null) {
   const body = { action: n ? 'create' : 'update', username: $('#un').value, full_name: $('#fn').value, role: $('#rl').value, student_id: studentId };
@@ -793,7 +795,7 @@ function onCloudChanged(changed, rejected) {
 }
 
 /* ================= router & boot ================= */
-const GUARD = { dashboard: 'teacher', users: 'admin', logs: 'admin', settings: 'admin', subjects: 'admin', classes: 'admin', attendance: 'admin', announcements: 'admin' };
+const GUARD = { dashboard: 'teacher', 'edit-public': 'superadmin', applications: 'superadmin', users: 'admin', logs: 'admin', settings: 'admin', subjects: 'admin', classes: 'admin', attendance: 'admin', announcements: 'admin' };
 function route() {
   if (!ME) return; const h = location.hash.replace(/^#\/?/, '') || 'home', [p, a, b] = h.split('/');
   if (isPortalUser()) {
@@ -804,13 +806,16 @@ function route() {
     users: pageUsers, account: pageAccount, sync: pageSync, logs: pageLogs, subjects: pageSubjects, classes: pageClasses, settings: pageSettings, data: pageData,
     dashboard: pageDashboard, timetable: pageTimetable, assignments: pageAssignments, submissions: () => pageSubmissions(a),
     staff: pageStaff, 'staff-profile': () => pageStaffProfile(a), 'student-leaves': pageStudentLeaves, fees: pageFees,
-    'notification-settings': () => PushManager.pageNotificationSettings(), 'share-app': () => AppConfig.pageShareApp(), 'security-log': () => Security.pageSecurityLog() };
+    'notification-settings': () => PushManager.pageNotificationSettings(), 'share-app': () => AppConfig.pageShareApp(), 'security-log': () => Security.pageSecurityLog(), 'plugins': () => PluginLoader.pagePlugins(), ...PluginLoader.getRoutes(),
+    'forum':()=>Discussion&&Discussion.pageDiscussion(),'discussion':()=>Discussion&&Discussion.pageDiscussion() };
   (pages[p] || (isPortalUser() ? pagePortal : pageHome))();
 }
 addEventListener('hashchange', () => { closeModal(); route(); });
 (async function boot() {
   Security.init();
   AppConfig.applyBranding();
+  PluginLoader.initAll();
+  if (window.StudentAuth) await StudentAuth.ensureCodes();
   const didAutoConfig = await AppConfig.checkURLConfig();
   if (didAutoConfig) return location.reload();
   try {
@@ -822,6 +827,8 @@ addEventListener('hashchange', () => { closeModal(); route(); });
       await seed(); Cloud.on('changed', onCloudChanged); Cloud.on('status', updateSyncBtn); Cloud.on('authLost', () => { toast('You were signed out. Please sign in again.'); setTimeout(() => { endSession(); location.reload(); }, 1500); }); Cloud.start();
     } else if (!Store.all('users').length) { await setupScreen(); refreshSettings(); if (!ME) await loginScreen(); await seed(); }
     else { ME = sessionUser(); if (!ME) await loginScreen(); await seed(); }
+    if (ME.role === 'guest') { route(); return; }
+    if (ME.role === 'student' && !ME.username?.startsWith('stu_')) { route(); return; }
     if (ME.must_change) await mustChangePassword();
     prevUnread = unreadNotifs().length; route(); if (prevUnread) toast(`You have ${prevUnread} new notification${prevUnread > 1 ? 's' : ''}.`, 4000);
   } catch (e) {

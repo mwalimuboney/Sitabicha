@@ -25,7 +25,16 @@ function pageTimetable() {
 
   const tt = new Map(Store.all('timetable').filter(r => r.class_id === cid).map(r => [ttKey(r.class_id, r.day, r.period), r]));
   const subs = activeSubsFor(sysOfClass(cid));
-  const userList = Store.all('users').filter(u => u.active !== false && ['teacher','admin','superadmin'].includes(u.role));
+  const allTeachers = Store.all('users').filter(u => u.active !== false && ['teacher','admin','superadmin'].includes(u.role));
+  // Only show teachers who teach the selected subject
+  const getTeachersForSubject = (subId) => {
+    if (!subId) return allTeachers;
+    const staffProfiles = Store.all('staff_profiles');
+    const teacherWithSub = new Set(staffProfiles.filter(p => (p.teaching_subjects||[]).includes(subId)).map(p=>p.user_id));
+    // Admins/superadmins always appear; teachers only if they teach that subject
+    return allTeachers.filter(u => ['admin','superadmin'].includes(u.role) || teacherWithSub.has(u.id));
+  };
+  const userList = getTeachersForSubject(sid);
 
   const cellHtml = (day, period) => {
     const r = tt.get(ttKey(cid, day, period));
@@ -59,7 +68,7 @@ function pageTimetable() {
       const cur = tt.get(ttKey(cid, day, period)) || {};
       modal(`<h3>${day} — ${period}</h3>
         <label>Subject</label><select id="tt-sub"><option value="">— free —</option>${opts(subs.map(s => ({ v: s.id, t: s.name })), cur.subject_id || '')}</select>
-        <label>Teacher</label><select id="tt-tch"><option value="">—</option>${opts(userList.map(u => ({ v: u.id, t: u.full_name })), cur.teacher_id || '')}</select>
+        <label>Teacher</label><select id="tt-tch"><option value="">—</option>${opts(getTeachersForSubject(sid||'').map(u => ({ v: u.id, t: u.full_name })), cur.teacher_id || '')}</select>
         <label>Room (optional)</label><input id="tt-room" value="${esc(cur.room || '')}">
         <div class="row"><button class="btn grow" id="tt-x">Cancel</button><button class="btn pri grow" id="tt-ok">Save</button></div>`, () => {
         $('#tt-x').onclick = closeModal;

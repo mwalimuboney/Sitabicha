@@ -166,7 +166,7 @@ function studentLeaveModal() {
       const phone = s.guardian_phone || s.guardian_phone2;
       if (phone) {
         try {
-          const apikey = SET.callmebot_apikey || '';
+          const apikey = s.guardian_callmebot_apikey || SET.callmebot_apikey || '';
           if (apikey) {
             await fetch(`https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(phone)}&text=${encodeURIComponent('📢 ' + msg + ' — ' + SET.school_name)}&apikey=${apikey}`);
           }

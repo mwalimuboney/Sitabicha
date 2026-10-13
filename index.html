@@ -12,6 +12,24 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 <title>School Records</title>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
+  <!-- DOMPurify -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+
+  <!-- Mammoth.js (DOCX→HTML) -->
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <!-- QRCode.js (for scan input) -->
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <!-- KaTeX Math rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <!-- face-api.js (face recognition) -->
+  <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 </head>
 <body>
 <header class="top"><button id="back" class="icon hidden" aria-label="Back">&#8592;</button><h1 id="title">School Records</h1><button id="sync" class="icon hidden" aria-label="Cloud sync">&#9729;</button><button id="bell" class="icon hidden" aria-label="Notifications">&#128276;<b id="bn" class="hidden"></b></button></header>
@@ -29,6 +47,30 @@
 <script src="core.js"></script>
 <script src="store.js"></script>
 <script src="sync.js"></script>
+<script src="i18n.js"></script>
+<script src="dictionary.js"></script>
+<script src="math-tools.js"></script>
+<script src="face-attendance.js"></script>
+<script src="student-auth.js"></script>
+<script src="departments.js"></script>
+<script src="public-pages.js"></script>
+<script src="registration.js"></script>
+<script src="voice-marks.js"></script>
+<script src="app-lock.js"></script>
+<script src="plugin-loader.js"></script>
+<script src="teacher-gate.js"></script>
+<script src="attendance-v2.js"></script>
+<script src="gradebook.js"></script>
+<script src="bulk-messaging.js"></script>
+<script src="library.js"></script>
+<script src="quiz-builder.js"></script>
+<script src="ai-exam-generator.js"></script>
+<script src="notes-bank.js"></script>
+<script src="courses.js"></script>
+<script src="discussion.js"></script>
+<script src="secretary.js"></script>
+<script src="onboarding.js"></script>
+<script src="ai-reports.js"></script>
 <script src="config.js"></script>
 <script src="security.js"></script>
 <script src="notifications-push.js"></script>

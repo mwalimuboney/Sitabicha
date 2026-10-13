@@ -1,7 +1,7 @@
 /* Local database (IndexedDB v2). Everything is kept in memory and written through to the phone.
    Every record has id + updated_at (+ deleted_at when removed) so merging files and cloud sync work later. */
 const Store = (() => {
-  const NAMES = ['settings', 'classes', 'students', 'subjects', 'groups', 'rules', 'enrollments', 'marks', 'attendance', 'users', 'locks', 'notifications', 'announcements', 'logs', 'photos', 'timetable', 'assignments', 'submissions', 'staff_profiles', 'leave_requests', 'student_leaves', 'fee_structures', 'fee_payments', 'push_subscriptions'];
+  const NAMES = ['settings', 'classes', 'students', 'subjects', 'groups', 'rules', 'enrollments', 'marks', 'attendance', 'users', 'locks', 'notifications', 'announcements', 'logs', 'photos', 'timetable', 'assignments', 'submissions', 'staff_profiles', 'leave_requests', 'student_leaves', 'fee_structures', 'fee_payments', 'push_subscriptions', 'teacher_checkins', 'bulk_messages', 'library_books', 'library_loans', 'departments', 'dept_members', 'role_applications', 'public_content', 'face_profiles', 'face_attendance_log'];
   const mem = {}; let db;
   const now = () => new Date().toISOString();
   function open() {
