@@ -57,3 +57,51 @@ table.t{width:100%;border-collapse:collapse;font-size:14px}table.t td,table.t th
 
 .sync-ok{color:#a7f3d0}.sync-run{color:#fde68a;animation:sp 1s linear infinite}.sync-off{color:#d1d5db;opacity:.7}.sync-err{color:#fecaca}.sync-idle{color:#fff}
 @keyframes sp{50%{opacity:.4}}
+
+
+/* ===== Mobile-first enhancements (v5) ===== */
+/* Larger tap targets on phones */
+.btn { min-height: 52px; font-size: 16px; border-radius: 14px; }
+.btn.sm { min-height: 40px; font-size: 14px; }
+input, select, textarea { font-size: 16px; min-height: 50px; border-radius: 12px; }
+textarea { min-height: 80px; }
+
+/* Sticky bottom action button */
+.sticky-btn { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 3; padding: 8px 12px; background: var(--bg); }
+
+/* Pull-to-refresh indicator */
+.ptr { text-align: center; padding: 10px; color: var(--mu); font-size: 13px; display: none; }
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1a1a; --card: #1a2626; --tx: #e0eaea; --mu: #7fa8a8; --bd: #2a3a3a; }
+  input, select, textarea { background: #1a2626; color: var(--tx); border-color: var(--bd); }
+  .lock { background: #0a5450; }
+}
+
+/* Safe area padding for notch phones */
+.top { padding-top: max(10px, env(safe-area-inset-top)); }
+.tabs { padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+
+/* Swipeable cards (visual hint) */
+.swipe-hint::after { content: '← swipe'; font-size: 11px; color: var(--mu); margin-left: 8px; }
+
+/* Timetable grid mobile fix */
+.tt-cell { background: #e6f4f1; cursor: pointer; padding: 4px; font-size: 11px; border-radius: 4px; }
+.tt-empty { color: var(--mu); font-size: 12px; text-align: center; cursor: pointer; }
+
+/* Security log */
+.sec-badge { background: #fef3f2; color: var(--bad); font-size: 11px; padding: 2px 8px; border-radius: 99px; }
+
+/* Fee balance colors */
+.bad { color: var(--bad) !important; }
+.good { color: var(--good) !important; }
+
+/* Avatar initials better contrast */
+.av { font-size: 15px; }
+
+/* Wide screens: content max-width */
+@media (min-width: 600px) {
+  main { max-width: 640px; }
+  .modal > div { border-radius: 18px; margin-bottom: 20px; }
+}

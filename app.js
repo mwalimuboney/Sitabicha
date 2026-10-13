@@ -562,7 +562,7 @@ function pageMore() {
   view('More', row('#/notifications', '&#128276;', 'Notifications', un ? `${un} unread` : 'All caught up') + (atLeast('admin') ? row('#/attendance', '&#128198;', 'Attendance', 'Today’s class attendance') + row('#/announcements', '&#128238;', 'Announcements', 'School notices for families') : '') + row('#/locks', L.locked ? '&#128274;' : '&#128275;', 'Exam entry control', L.locked ? 'LOCKED' : 'Open')
     + (atLeast('admin') ? row('#/users', '&#128101;', 'Users &amp; roles', 'Teachers, admins, passwords') + row('#/logs', '&#128065;', 'Activity log', 'Who viewed or changed what')
       + row('#/subjects', '&#128218;', 'Subjects &amp; rules', 'Compulsory/optional, 8-4-4 or CBC') + row('#/classes', '&#127979;', 'Classes', 'Form 3, Form 4, Grade 10 …') + row('#/settings', '&#9881;', 'Settings', 'School, term, grading') : '')
-    + row('#/sync', '&#9729;', 'Cloud sync', Cloud.enabled() ? (Cloud.status.state === 'ok' ? 'Synced' : Cloud.status.msg || Cloud.status.state) : 'Not connected') + row('#/data', '&#128190;', 'Backup &amp; data', atLeast('admin') ? 'Backup, share updates, CSV' : 'Share my work, receive updates') + row('#/account', '&#128100;', 'My account', 'Change password')
+    + row('#/timetable', '&#128198;', 'Timetable', 'Weekly class schedule') + row('#/assignments', '&#128221;', 'Assignments', 'Homework tracker') + row('#/staff', '&#128101;', 'Staff HR', 'Contracts & leave') + row('#/student-leaves', '&#128196;', 'Student Leave-Outs', 'Notify parent instantly') + row('#/fees', '&#128181;', 'Fee Management', 'Payments & receipts') + row('#/notification-settings', '&#128276;', 'Notifications & Alarms', 'Push + class bell') + row('#/share-app', '&#128247;', 'Share App / Branding', 'QR code for parents & staff') + (atLeast('superadmin') ? row('#/security-log', '&#9888;', 'Security log', 'Threats & anomalies') : '') + row('#/sync', '&#9729;', 'Cloud sync', Cloud.enabled() ? (Cloud.status.state === 'ok' ? 'Synced' : Cloud.status.msg || Cloud.status.state) : 'Not connected') + row('#/data', '&#128190;', 'Backup &amp; data', atLeast('admin') ? 'Backup, share updates, CSV' : 'Share my work, receive updates') + row('#/account', '&#128100;', 'My account', 'Change password')
     + `<button class="btn full" id="so" style="margin-top:8px">Sign out</button><p class="muted small pad">School Records v${APP_VERSION} · works offline · data is stored on this phone.</p>`, { tab: 'more' });
   $('#so').onclick = () => { endSession(); location.reload(); };
 }
@@ -793,7 +793,7 @@ function onCloudChanged(changed, rejected) {
 }
 
 /* ================= router & boot ================= */
-const GUARD = { users: 'admin', logs: 'admin', settings: 'admin', subjects: 'admin', classes: 'admin', attendance: 'admin', announcements: 'admin' };
+const GUARD = { dashboard: 'teacher', users: 'admin', logs: 'admin', settings: 'admin', subjects: 'admin', classes: 'admin', attendance: 'admin', announcements: 'admin' };
 function route() {
   if (!ME) return; const h = location.hash.replace(/^#\/?/, '') || 'home', [p, a, b] = h.split('/');
   if (isPortalUser()) {
@@ -801,11 +801,18 @@ function route() {
   }
   if ((GUARD[p] && !atLeast(GUARD[p])) || (p === 'student' && (a === 'new' || b === 'edit') && !atLeast('admin'))) { toast('You do not have access to that page.'); location.hash = isPortalUser() ? '#/portal' : '#/home'; return; }
   const pages = { home: pageHome, portal: pagePortal, students: pageStudents, student: () => (a === 'new' || b === 'edit') ? pageStudentForm(a === 'new' ? 'new' : a) : pageProfile(a), marks: pageMarks, attendance: pageAttendance, announcements: pageAnnouncements, reports: pageReports, more: pageMore, locks: pageLocks, notifications: pageNotifications,
-    users: pageUsers, account: pageAccount, sync: pageSync, logs: pageLogs, subjects: pageSubjects, classes: pageClasses, settings: pageSettings, data: pageData };
+    users: pageUsers, account: pageAccount, sync: pageSync, logs: pageLogs, subjects: pageSubjects, classes: pageClasses, settings: pageSettings, data: pageData,
+    dashboard: pageDashboard, timetable: pageTimetable, assignments: pageAssignments, submissions: () => pageSubmissions(a),
+    staff: pageStaff, 'staff-profile': () => pageStaffProfile(a), 'student-leaves': pageStudentLeaves, fees: pageFees,
+    'notification-settings': () => PushManager.pageNotificationSettings(), 'share-app': () => AppConfig.pageShareApp(), 'security-log': () => Security.pageSecurityLog() };
   (pages[p] || (isPortalUser() ? pagePortal : pageHome))();
 }
 addEventListener('hashchange', () => { closeModal(); route(); });
 (async function boot() {
+  Security.init();
+  AppConfig.applyBranding();
+  const didAutoConfig = await AppConfig.checkURLConfig();
+  if (didAutoConfig) return location.reload();
   try {
     await Store.init(); refreshSettings(); await migrate();
     if (Cloud.enabled()) {
