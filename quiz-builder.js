@@ -189,7 +189,8 @@ const QuizBuilder = (() => {
         toast('AI generating questions... ⏳',6000);
         try {
           const prompt=`Generate ${n} ${type==='mcq'?'multiple choice':type==='tf'?'true/false':'short answer'} questions for ${lvl||'high school'} level on topic: "${topic}"${sub?' subtopic: "'+sub+'"':''}.
-Return ONLY valid JSON array, no extra text:
+Write all maths in plain text (for example x^2, 3/4, sqrt(9)); never use LaTeX or backslashes.
+Return ONLY a valid JSON array, no extra text:
 [{"question":"...","type":"${type}","options":${type==='mcq'?'["A text","B text","C text","D text"]':'[]'},"correct_index":${type==='mcq'?'0':'null'},"correct_answer":"...","hint":"...","solution":"..."}]`;
           const res=await groqFetch('https://api.groq.com/openai/v1/chat/completions',{
             method:'POST',
@@ -197,10 +198,12 @@ Return ONLY valid JSON array, no extra text:
             body:JSON.stringify({model:'llama3-8b-8192',messages:[{role:'user',content:prompt}],max_tokens:2000,temperature:0.7})
           });
           const j=await res.json();
-          const text=j.choices?.[0]?.message?.content||'';
+          if(!res.ok||j.error) throw new Error((j.error&&j.error.message)||'AI request failed ('+res.status+')');
+          const text=(j.choices?.[0]?.message?.content||'').replace(/```(?:json)?/gi,'');
           const jsonMatch=text.match(/\[[\s\S]*\]/);
-          if(!jsonMatch) throw new Error('AI returned invalid format');
-          const questions=JSON.parse(jsonMatch[0]);
+          if(!jsonMatch) throw new Error('The AI did not return a list of questions. Please try again.');
+          let questions; try { questions=JSON.parse(jsonMatch[0]); } catch(_) { questions=JSON.parse(jsonMatch[0].replace(/\\(?!["\\\/bfnrtu])/g,'\\\\')); }
+          if(!Array.isArray(questions)||!questions.length) throw new Error('The AI returned no questions. Please try again.');
           for(const qq of questions){
             await Store.put('quiz_questions',{id:Core.uid(),quiz_id:quizId,question:qq.question||'',
               type:qq.type||type,options:qq.options||[],correct_index:qq.correct_index,
