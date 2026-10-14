@@ -195,7 +195,7 @@ Return ONLY a valid JSON array, no extra text:
           const res=await groqFetch('https://api.groq.com/openai/v1/chat/completions',{
             method:'POST',
             headers:{'Authorization':'Bearer '+apiKey,'Content-Type':'application/json'},
-            body:JSON.stringify({model:'llama3-8b-8192',messages:[{role:'user',content:prompt}],max_tokens:2000,temperature:0.7})
+            body:JSON.stringify({model:'llama3-70b-8192',messages:[{role:'user',content:prompt}],max_tokens:3500,temperature:0.5})
           });
           const j=await res.json();
           if(!res.ok||j.error) throw new Error((j.error&&j.error.message)||'AI request failed ('+res.status+')');
