@@ -13,7 +13,7 @@
    not by hiding the anon key (it is designed to be public).
    ===================================================================== */
 window.SR_DEFAULT_CLOUD = {
-  url:    '',                      // e.g. 'https://abcdxyz.supabase.co'
-  anon:   '',                      // e.g. 'eyJhbGciOi...' (the long anon / public key)
-  domain: 'school-records.app'     // keep the same value you used in SETUP_SUPABASE.md
+  url:    'https://kscxrtbxbimoyfyysroi.supabase.co',                      
+  anon:   'sb_publishable_wEUAGatR3Bts9soh4xewMQ_v3-yzlZv',                      
+  domain: 'sitabicha.schooly.live'     
 };
