@@ -167,8 +167,8 @@ const QuizBuilder = (() => {
   }
 
   async function aiGenerateQuestions(quizId) {
-    const apiKey=SET.groq_api_key||'';
-    if(!apiKey) return toast('Add groq_api_key in Settings first.');
+    const apiKey=(window.AIReady&&AIReady()?'server':'');
+    if(!apiKey) return toast('AI is not available. Sign in with internet; the super admin must set up the AI key on the server.');
     const q=Store.get('quizzes',quizId);
     modal(`<h3>✨ AI Question Generator</h3>
       <label>Topic</label><input id="ai-topic" placeholder="e.g. Photosynthesis">
@@ -191,7 +191,7 @@ const QuizBuilder = (() => {
           const prompt=`Generate ${n} ${type==='mcq'?'multiple choice':type==='tf'?'true/false':'short answer'} questions for ${lvl||'high school'} level on topic: "${topic}"${sub?' subtopic: "'+sub+'"':''}.
 Return ONLY valid JSON array, no extra text:
 [{"question":"...","type":"${type}","options":${type==='mcq'?'["A text","B text","C text","D text"]':'[]'},"correct_index":${type==='mcq'?'0':'null'},"correct_answer":"...","hint":"...","solution":"..."}]`;
-          const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+          const res=await groqFetch('https://api.groq.com/openai/v1/chat/completions',{
             method:'POST',
             headers:{'Authorization':'Bearer '+apiKey,'Content-Type':'application/json'},
             body:JSON.stringify({model:'llama3-8b-8192',messages:[{role:'user',content:prompt}],max_tokens:2000,temperature:0.7})

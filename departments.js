@@ -71,8 +71,50 @@ const Departments = (() => {
     }
   ];
 
+
+  /* ── HOD changes wait for super admin approval; school admins and the super admin save directly ── */
+  const needsApproval = () => !atLeast('admin');
+  async function putOrRequest(kind, deptId, store, rec, label) {
+    if (!needsApproval()) return Store.put(store, rec);
+    await Store.put('dept_requests', { id: Core.uid(), dept_id: deptId, kind, store, payload: rec, label: label || '', requested_by: ME.id, requested_by_name: ME.full_name || ME.username,
+      status: 'pending', created_at: new Date().toISOString() });
+    toast('Sent to the super admin. It takes effect once approved.', 5000); return null;
+  }
+  async function removeOrRequest(kind, deptId, store, id, label) {
+    if (!needsApproval()) { await Store.remove(store, id); return true; }
+    await Store.put('dept_requests', { id: Core.uid(), dept_id: deptId, kind, store, target_id: id, label: label || '', requested_by: ME.id, requested_by_name: ME.full_name || ME.username,
+      status: 'pending', created_at: new Date().toISOString() });
+    toast('Sent to the super admin. It takes effect once approved.', 5000); return false;
+  }
+  async function applyRequest(rq) {
+    if (rq.kind === 'member_remove') await Store.remove('dept_members', rq.target_id);
+    else if (rq.store === 'dept_members') { const m = await Store.put('dept_members', rq.payload); if (rq.payload.role === 'hod') { const dp = Store.get('departments', rq.dept_id); if (dp) await Store.put('departments', { ...dp, hod_id: rq.payload.user_id }); } }
+    else if (rq.store === 'departments') { const cur = Store.get('departments', rq.dept_id) || {}; await Store.put('departments', { ...cur, ...rq.payload }); }
+  }
+  async function decide(id, ok) {
+    const rq = Store.get('dept_requests', id); if (!rq || rq.status !== 'pending') return;
+    if (ok) await applyRequest(rq);
+    await Store.put('dept_requests', { ...rq, status: ok ? 'approved' : 'rejected', reviewed_by: ME.id, reviewed_at: new Date().toISOString() });
+    toast(ok ? 'Approved and applied.' : 'Rejected.'); pageDeptRequests();
+  }
+  function pageDeptRequests() {
+    if (!atLeast('superadmin')) { view('Department requests', '<p class="pad muted">Super admin only.</p>', { back: '#/more', tab: 'more' }); return; }
+    const all = Store.all('dept_requests').sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const pend = all.filter(r => r.status === 'pending'), done = all.filter(r => r.status !== 'pending').slice(0, 15);
+    const desc = r => { const dp = Store.get('departments', r.dept_id); const dn = dp ? dp.name : r.dept_id;
+      if (r.kind === 'member_remove') { const m = Store.get('dept_members', r.target_id); const u = m && Store.get('users', m.user_id); return `Remove <b>${esc(u ? u.full_name : 'a member')}</b> from ${esc(dn)}`; }
+      if (r.store === 'dept_members') { const u = Store.get('users', r.payload.user_id); return `${r.payload.id && Store.get('dept_members', r.payload.id) ? 'Change' : 'Add'} <b>${esc(u ? u.full_name : 'member')}</b> as ${esc(r.payload.role)} in ${esc(dn)}${r.payload.title ? ' (' + esc(r.payload.title) + ')' : ''}`; }
+      return `Edit department <b>${esc(dn)}</b> (${esc(r.payload.name || '')})`; };
+    view('Department requests', `<div class="card"><h2>Waiting for you (${pend.length})</h2>${pend.length ? pend.map(r => `<div style="padding:10px 0;border-bottom:1px solid var(--bd)"><div>${desc(r)}</div><div class="small muted">From ${esc(r.requested_by_name || '')} · ${new Date(r.created_at).toLocaleDateString()}</div>
+      <div class="row" style="margin-top:8px"><button class="btn sm pri grow" data-ok="${r.id}">Approve</button><button class="btn sm bad grow" data-no="${r.id}">Reject</button></div></div>`).join('') : '<p class="muted small">Nothing waiting.</p>'}</div>
+      ${done.length ? `<div class="card"><h2>Recent decisions</h2>${done.map(r => `<div class="small" style="padding:6px 0">${r.status === 'approved' ? '✅' : '❌'} ${desc(r)}</div>`).join('')}</div>` : ''}`, { back: '#/departments', tab: 'more' });
+    document.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => decide(b.dataset.ok, true));
+    document.querySelectorAll('[data-no]').forEach(b => b.onclick = () => decide(b.dataset.no, false));
+  }
+
   /* ── Seed default departments ── */
   async function seedDepartments() {
+    if (!atLeast('admin')) return;
     const existing = Store.all('departments');
     if (existing.length) return;
     for (const d of DEFAULT_DEPTS) {
@@ -229,8 +271,8 @@ const Departments = (() => {
     document.querySelectorAll('[data-dm-edit]').forEach(b => b.onclick = () => memberModal(deptId, Store.get('dept_members', b.dataset.dmEdit)));
     document.querySelectorAll('[data-dm-remove]').forEach(b => b.onclick = () =>
       confirmBox('Remove member?', 'They will lose department access.', async () => {
-        await Store.remove('dept_members', b.dataset.dmRemove);
-        toast('Removed.'); pageDeptDetail(deptId);
+        const done = await removeOrRequest('member_remove', deptId, 'dept_members', b.dataset.dmRemove, 'Remove member');
+        if (done) toast('Removed.'); pageDeptDetail(deptId);
       }, 'Remove')
     );
   }
@@ -255,7 +297,7 @@ const Departments = (() => {
       document.getElementById('dp-ok').onclick = async () => {
         const name = document.getElementById('dp-name').value.trim();
         if (!name) return toast('Enter a department name.');
-        await Store.put('departments', {
+        const savedDept = await putOrRequest('dept_edit', d.id, 'departments', {
           ...(d||{}), id: d.id || Core.uid(), name,
           icon: document.getElementById('dp-icon').value||'🏫',
           color: document.getElementById('dp-color').value,
@@ -264,8 +306,8 @@ const Departments = (() => {
           duties: document.getElementById('dp-duties').value.split('\n').map(r=>r.trim()).filter(Boolean),
           active: document.getElementById('dp-active').checked,
           created_at: d.created_at || new Date().toISOString()
-        });
-        closeModal(); toast('Saved.'); pageDepartments();
+        }, 'Edit department');
+        closeModal(); if (savedDept) toast('Saved.'); pageDepartments();
       };
     });
   }
@@ -292,19 +334,19 @@ const Departments = (() => {
         const userId = n ? document.getElementById('dm-user').value : m.user_id;
         const role = document.getElementById('dm-role').value;
         if (!userId) return toast('Select a staff member.');
-        const rec = await Store.put('dept_members', {
+        const rec = await putOrRequest('member_save', deptId, 'dept_members', {
           ...(m||{}), id: m.id || Core.uid(),
           dept_id: deptId, user_id: userId, role,
           title: document.getElementById('dm-title').value.trim(),
           responsibilities: document.getElementById('dm-resp').value.trim(),
           joined_at: m.joined_at || new Date().toISOString()
-        });
-        // If HOD, update dept record
-        if (role === 'hod') {
+        }, 'Member change');
+        // If HOD, update dept record (approved requests do this when applied)
+        if (rec && role === 'hod') {
           const dept = Store.get('departments', deptId);
           if (dept) await Store.put('departments', { ...dept, hod_id: userId });
         }
-        closeModal(); toast('Saved.'); pageDeptDetail(deptId);
+        closeModal(); if (rec) toast('Saved.'); pageDeptDetail(deptId);
       };
     });
   }
@@ -339,12 +381,14 @@ const Departments = (() => {
   PluginLoader.register({
     id:'departments', name:'Staff Departments', icon:'🏫',
     description:'10 departments with rights, duties, HOD, members and access control.',
-    stores:['departments','dept_members'],
+    stores:['departments','dept_members','dept_requests'],
     routes:{
       departments: pageDepartments,
-      department: () => pageDeptDetail(location.hash.split('/')[2])
+      department: () => pageDeptDetail(location.hash.split('/')[2]),
+      'dept-requests': pageDeptRequests
     },
-    menuItems:[{hash:'#/departments',icon:'🏫',title:'Departments',sub:'Staff departments & rights',role:'teacher'}],
+    menuItems:[{hash:'#/departments',icon:'🏫',title:'Departments',sub:'Staff departments & rights',role:'teacher'},
+      {hash:'#/dept-requests',icon:'📝',title:'Department requests',sub:'HOD changes to approve',role:'superadmin'}],
     onInit: seedDepartments
   });
 

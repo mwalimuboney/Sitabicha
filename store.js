@@ -1,12 +1,12 @@
 /* Local database (IndexedDB v2). Everything is kept in memory and written through to the phone.
    Every record has id + updated_at (+ deleted_at when removed) so merging files and cloud sync work later. */
 const Store = (() => {
-  const NAMES = ['settings', 'classes', 'students', 'subjects', 'groups', 'rules', 'enrollments', 'marks', 'attendance', 'users', 'locks', 'notifications', 'announcements', 'logs', 'photos', 'timetable', 'assignments', 'submissions', 'staff_profiles', 'leave_requests', 'student_leaves', 'fee_structures', 'fee_payments', 'push_subscriptions', 'teacher_checkins', 'bulk_messages', 'library_books', 'library_loans', 'departments', 'dept_members', 'role_applications', 'public_content', 'face_profiles', 'face_attendance_log'];
+  const NAMES = ['settings', 'classes', 'students', 'subjects', 'groups', 'rules', 'enrollments', 'marks', 'attendance', 'users', 'locks', 'notifications', 'announcements', 'logs', 'photos', 'timetable', 'assignments', 'submissions', 'staff_profiles', 'leave_requests', 'student_leaves', 'fee_structures', 'fee_payments', 'push_subscriptions', 'teacher_checkins', 'bulk_messages', 'library_books', 'library_loans', 'departments', 'dept_members', 'role_applications', 'public_content', 'face_profiles', 'face_attendance_log', 'ai_exams', 'chat_dms', 'course_lessons', 'course_modules', 'course_progress', 'courses', 'forum_posts', 'forum_replies', 'notes_bank', 'dept_requests', 'quiz_questions', 'quiz_responses', 'quiz_sessions', 'quizzes', 'teacher_chat'];
   const mem = {}; let db;
   const now = () => new Date().toISOString();
   function open() {
     return new Promise((res, rej) => {
-      const r = indexedDB.open('school_records', 2);
+      const r = indexedDB.open('school_records', 4);
       r.onupgradeneeded = () => { const d = r.result; NAMES.forEach(n => { if (!d.objectStoreNames.contains(n)) d.createObjectStore(n, { keyPath: 'id' }); }); };
       r.onsuccess = () => { db = r.result; res(); };
       r.onerror = () => rej(r.error);

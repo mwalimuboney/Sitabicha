@@ -178,12 +178,12 @@ const MathTools = (() => {
   async function aiSolve(targetId) {
     const el = document.getElementById(targetId);
     const problem = el ? el.value.trim() : '';
-    const key = SET.groq_api_key || '';
-    if (!key) return toast('Add groq_api_key in Settings for AI solving.');
+    const key = (window.AIReady&&AIReady()?'server':'');
+    if (!key) return toast('AI is not available. Sign in with internet; the super admin must set up the AI key on the server.');
     if (!problem) return toast('Enter a maths problem first.');
     toast('AI solving step by step... ⏳', 10000);
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await groqFetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST', headers: { 'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: 'llama3-8b-8192', messages: [{ role: 'user', content: `Solve this mathematics problem step by step. Show each step clearly. Use simple notation:\n\n${problem}\n\nFormat: Step 1: ..., Step 2: ..., Final Answer: ...` }], max_tokens: 600 })
       });

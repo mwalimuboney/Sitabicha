@@ -3,8 +3,8 @@
 const AIReports = (() => {
   /* ── Groq AI report comment generator ── */
   async function generateComment(studentCtxData) {
-    const apiKey = SET.groq_api_key || '';
-    if (!apiKey) return 'Groq API key not set. Add groq_api_key in Settings.';
+    const apiKey = (window.AIReady&&AIReady()?'server':'');
+    if (!apiKey) return 'AI is not available. Sign in with internet; the super admin must set up the AI key on the server.';
     const prompt = `You are a school teacher writing a report card comment. Be encouraging, specific and concise (2-3 sentences max).
 Student: ${studentCtxData.student.name}
 Class: ${studentCtxData.student.class_name}
@@ -13,7 +13,7 @@ Overall grade: ${studentCtxData.grade}
 Subjects: ${(studentCtxData.rows||[]).map(r=>r.subject+':'+r.score+' ('+r.grade+')').join(', ')}
 Write a personalized comment for this student's report card:`;
     try {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const res = await groqFetch('https://api.groq.com/openai/v1/chat/completions', {
         method:'POST',
         headers:{'Authorization':'Bearer '+apiKey,'Content-Type':'application/json'},
         body: JSON.stringify({ model:'llama3-8b-8192', messages:[{role:'user',content:prompt}], max_tokens:150, temperature:0.7 })
@@ -30,7 +30,7 @@ Write a personalized comment for this student's report card:`;
     view('AI Report Comments', `
       <div class="card">
         <h2>🤖 AI Comment Generator</h2>
-        <p class="muted small">Powered by Groq (free). Add <b>groq_api_key</b> in Settings first.</p>
+        <p class="muted small">Powered by Groq (free). The key is kept safely on the server.</p>
         <label>Class</label><select id="ai-cls">${opts(cl.map(c=>({v:c.id,t:c.name})),cl[0]?.id||'')}</select>
         <label>Term</label><select id="ai-term">${opts(list(SET.terms),SET.current_term)}</select>
         <label>Exam (leave empty for all)</label>

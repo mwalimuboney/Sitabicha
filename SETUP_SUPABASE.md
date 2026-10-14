@@ -47,3 +47,34 @@ Teachers sign in once with internet; after that the app also works offline and s
 - Check Supabase's current free-plan limits (storage, and whether unused projects pause). Photos are the biggest data.
 - Keep making backups (More -> Backup & data) — cloud sync is not a backup if someone deletes data.
 - Student data is personal data about children; check your obligations under Kenya's Data Protection Act with your school's lawyer or the ODPC.
+
+## One shared link for everyone (GitHub Pages)
+Open `cloud-config.js`, paste your **Project URL** and **anon public key**, commit and push. Every visitor then lands on
+Sign in / Create account with no setup. The anon key is meant to be public; protection comes from the database rules.
+**Never** put the `service_role` key anywhere in this repo. New sign-ups start as Guest until the super admin approves them
+(More -> Role Applications). Deploy the `admin-users` function (step 5) — sign-up depends on it.
+
+## Upgrading an existing project
+Run `supabase/migration-v9-stores.sql` once in the SQL Editor (lets timetable, attendance, fees, quizzes, courses etc. sync).
+
+## Lock the account function to your website
+Dashboard -> Edge Functions -> admin-users -> Secrets: add `ALLOWED_ORIGINS` = `https://YOURNAME.github.io` (origin only, no path; several separated by commas). Redeploy the function.
+
+## API keys live ONLY in Supabase secrets (never in the database or on phones)
+Deploy two more functions: `ai-proxy` and `send-sms` (paste each `index.ts`, or `supabase functions deploy ai-proxy send-sms`).
+Dashboard -> Edge Functions -> Secrets, add:
+- `GROQ_API_KEY`  (AI tools)           - optional `GROQ_MODEL_SMALL` / `GROQ_MODEL_LARGE` if Groq renames models
+- `CALLMEBOT_DEFAULT_APIKEY` (optional WhatsApp fallback; guardians' own keys are still used first)
+- `AT_API_KEY`, `AT_USERNAME` (Africa's Talking SMS)
+- `ALLOWED_ORIGINS` = `https://YOURNAME.github.io`
+Then run `supabase/migration-v9-stores.sql` — it also deletes any key an older version stored in the database.
+If a key was ever saved in the database before, treat it as exposed: create a new key at Groq / CallMeBot / Africa's Talking, revoke the old one, and put the new one only in Secrets.
+
+## Usage limits, plans and student access (v10)
+1. Run `supabase/migration-v10-usage.sql` in the SQL Editor (after `schema.sql`). Re-deploy `ai-proxy` and `send-sms` (they now check the limits).
+2. As super admin open **More -> Usage & limits**: tap a person to reduce, raise or turn off AI / WhatsApp / SMS, switch Notes / Courses / Quizzes / Forum on or off for a student, or suspend them.
+   **Plans & pricing** edits the defaults for a whole role (Teacher, School admin, Student, Parent) and creates paid plans.
+3. The super admin is never limited. Limits are enforced by the server, so a modified app cannot bypass them.
+4. Department heads (HOD) can request changes to their department; the super admin approves them under **More -> Department requests**.
+5. Paystack later: plans already hold price, period and Paystack plan code; payments are logged in `payment_events` and `apply_subscription()` extends a user's plan.
+   Deploy `paystack-webhook` with `--no-verify-jwt` and the `PAYSTACK_SECRET_KEY` secret. It is a skeleton and has not been tested against live Paystack.

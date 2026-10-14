@@ -20,21 +20,9 @@ const AttendanceV2 = (() => {
     const msg = `⚠️ ${stuName(student)} was marked ABSENT on ${date}${period ? ' during ' + period : ''}. — ${SET.school_name}`;
     // 1. WhatsApp via CallMeBot
     const phone = student.guardian_phone || student.guardian_phone2;
-    const apikey = student.guardian_callmebot_apikey || SET.callmebot_apikey || '';
-    if (phone && apikey) {
-      let d = String(phone).replace(/\D/g,''); if (d.startsWith('0')) d='254'+d.slice(1);
-      fetch(`https://api.callmebot.com/whatsapp.php?phone=${d}&text=${encodeURIComponent(msg)}&apikey=${apikey}`).catch(()=>{});
-    }
+    if (phone && Cloud.hasSession()) Cloud.sendMessage({ channel: 'whatsapp', phone, message: msg, apikey: student.guardian_callmebot_apikey || undefined }).catch(()=>{});
     // 2. Africa's Talking SMS (if key set)
-    const atKey = SET.africas_talking_apikey || '';
-    const atUser = SET.africas_talking_username || 'sandbox';
-    if (phone && atKey) {
-      fetch('https://api.africastalking.com/version1/messaging', {
-        method:'POST',
-        headers:{'apiKey':atKey,'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},
-        body:`username=${atUser}&to=${encodeURIComponent(phone)}&message=${encodeURIComponent(msg)}`
-      }).catch(()=>{});
-    }
+    if (phone && Cloud.hasSession()) Cloud.sendMessage({ channel: 'sms', phones: [phone], message: msg }).catch(()=>{});
     // 3. In-app notification
     await notify('Student absent', msg, 'all', 'warn');
   }

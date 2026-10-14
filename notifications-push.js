@@ -32,7 +32,7 @@ const PushManager = (() => {
   }
 
   async function saveSubToCloud(sub) {
-    if (!window.Cloud || !Cloud.enabled()) return;
+    if (typeof Cloud === 'undefined' || !Cloud.enabled()) return;
     try {
       await Cloud.adminUsers({ action: 'save_push_sub', subscription: sub.toJSON(), user_id: window.ME?.id });
     } catch (e) {}
@@ -53,7 +53,7 @@ const PushManager = (() => {
 
   function scheduleAlarmsForToday() {
     clearAlarms();
-    if (!window.Store || !window.ME) return;
+    if (typeof Store === 'undefined' || !window.ME) return;
     const today   = new Date();
     const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][today.getDay()];
     const myClass = window.ME.role === 'teacher' ? null : null; // teachers see their own periods
@@ -80,8 +80,8 @@ const PushManager = (() => {
       const endMs     = startMs + PERIOD_DURATION_MIN * 60 * 1000;
       const warnMs    = startMs - 10 * 60 * 1000;
       const now       = Date.now();
-      const sub       = window.Store.get('subjects', entry.subject_id);
-      const cls       = window.Store.get('classes', entry.class_id);
+      const sub       = Store.get('subjects', entry.subject_id);
+      const cls       = Store.get('classes', entry.class_id);
       const subName   = sub ? sub.name : 'Class';
       const clsName   = cls ? cls.name : '';
 

@@ -68,6 +68,8 @@ const portalStudent = () => {
   return id ? Store.get('students', id) || null : null;
 };
 const atLeast = r => !!ME && ROLE[ME.role] >= ROLE[r];
+/* plugins & modules look these up on window; top-level const/let are NOT window properties */
+window.atLeast = atLeast; Object.defineProperty(window, 'ME', { get: () => ME, configurable: true });
 const users = () => Store.all('users').sort((a, b) => ROLE[b.role] - ROLE[a.role] || a.full_name.localeCompare(b.full_name));
 const hex = buf => [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join('');
 async function hashPw(pw, salt) {
@@ -99,23 +101,14 @@ const endSession = () => { ME = null; localStorage.removeItem('sr_session'); Clo
 
 function overlay(html, wire) { const d = document.createElement('div'); d.className = 'lock'; d.innerHTML = html; document.body.appendChild(d); wire(d); return d; }
 function setupScreen() {
-  return new Promise(resolve => overlay(`<div style="width:100%;max-width:380px;text-align:left"><h2 style="text-align:center">&#127979; Set up School Records</h2>
-    <p style="text-align:center;margin-top:0">Create the Super Administrator account.</p>
-    <label style="color:#d1fae5">School name</label><input id="sn" value="${esc(SET.school_name === DEFAULTS.school_name ? '' : SET.school_name)}" placeholder="e.g. Hope Secondary School">
-    <label style="color:#d1fae5">Your full name</label><input id="fn"><label style="color:#d1fae5">Username</label><input id="un" autocapitalize="none" value="superadmin">
-    <label style="color:#d1fae5">Password (6+ characters)</label><input id="pw" type="password"><label style="color:#d1fae5">Repeat password</label><input id="p2" type="password">
-    <p id="er" style="color:#fecaca;min-height:22px"></p><button class="btn full" id="go" style="background:#fff">Create &amp; continue</button>
-    <p style="text-align:center;margin:18px 0 6px;font-size:14px">Joining a school that already exists?</p><button class="btn full" id="jn" style="background:transparent;color:#fff;border-color:#fff">Import school file</button><button class="btn full" id="cl" style="background:transparent;color:#fff;border-color:#fff;margin-top:8px">&#9729; Connect to my school's cloud</button><input id="jf" type="file" accept=".json,application/json" class="hidden"></div>`, d => {
-    const er = m => $('#er', d).textContent = m;
-    $('#go', d).onclick = async () => { try {
-      if ($('#pw', d).value !== $('#p2', d).value) throw new Error('Passwords do not match.');
-      if (!$('#sn', d).value.trim()) throw new Error('Enter the school name.');
-      await setSetting('school_name', $('#sn', d).value.trim());
-      const u = await createUser({ username: $('#un', d).value, full_name: $('#fn', d).value, role: 'superadmin', password: $('#pw', d).value, must: false });
-      startSession(u); d.remove(); resolve(); } catch (e) { er(e.message); } };
-    $('#cl', d).onclick = () => modal(`<h3>Connect to cloud</h3><label>Project URL</label><input id="cu" placeholder="https://xxxx.supabase.co" autocapitalize="none"><label>Anon (public) key</label><textarea id="ck" autocapitalize="none"></textarea><label>Login domain</label><input id="cd" value="school-records.app" autocapitalize="none"><div class="row"><button class="btn grow" id="x">Cancel</button><button class="btn pri grow" id="ok">Connect</button></div>`, () => { $('#x').onclick = closeModal; $('#ok').onclick = async () => { try { await connectCloud($('#cu').value, $('#ck').value, $('#cd').value); } catch (e) { toast(e.message); } }; });
-    $('#jn', d).onclick = () => $('#jf', d).click();
-    $('#jf', d).onchange = async e => { try { await Store.importAll(JSON.parse(await e.target.files[0].text())); refreshSettings(); if (!users().length) throw new Error('That file has no user accounts. Ask your super admin for the school file.'); d.remove(); resolve(); } catch (x) { er(x.message || 'Could not read that file.'); } };
+  /* Only one way in: connect this phone to the school's cloud. (Shown only when no shared connection is set in cloud-config.js.) */
+  return new Promise(() => overlay(`<div style="width:100%;max-width:380px;text-align:left"><h2 style="text-align:center">&#9729; Connect to your school</h2>
+    <p style="text-align:center;margin-top:0">Paste the details of your school's cloud (from your Supabase project &rarr; Settings &rarr; API).</p>
+    <label style="color:#d1fae5">Project URL</label><input id="cu" placeholder="https://xxxx.supabase.co" autocapitalize="none" autocomplete="off">
+    <label style="color:#d1fae5">Anon (public) key</label><textarea id="ck" autocapitalize="none" autocomplete="off"></textarea>
+    <label style="color:#d1fae5">Login domain</label><input id="cd" value="school-records.app" autocapitalize="none">
+    <p id="er" style="color:#fecaca;min-height:22px"></p><button class="btn full" id="cl" style="background:#fff">&#9729; Connect to my school's cloud</button></div>`, d => {
+    $('#cl', d).onclick = async () => { try { await connectCloud($('#cu', d).value, $('#ck', d).value, $('#cd', d).value); } catch (e) { $('#er', d).textContent = e.message; } };
   }));
 }
 function loginScreen() {
@@ -130,6 +123,7 @@ async function cloudLogin(login, password) {
   login = login.trim().toLowerCase();
   try {
     const uid = await Cloud.signIn(login, password); await Cloud.pullProfiles(); const u = Store.get('users', uid);
+    if (u && u.active === false && u.role === 'guest') { Cloud.signOut(); throw new Error('Your account was created and is waiting for the super administrator to approve it. Try again later.'); }
     if (!u || u.active === false) { Cloud.signOut(); throw new Error('This account is not active. Ask your super admin.'); }
     const salt = Core.uid(), cached = { uid, salt, hash: await hashPw(password, salt) };
     offlineCache(login, cached);
@@ -145,11 +139,33 @@ async function cloudLogin(login, password) {
 }
 function offlineCache(login, credentials) { localStorage.setItem('sr_off_' + login, JSON.stringify(credentials)); }
 function cloudLoginScreen() {
-  return new Promise(resolve => overlay(`<div style="width:100%;max-width:340px"><h2>&#9729; ${esc(SET.school_name)}</h2><p>Sign in to your school</p>
-    <input id="un" placeholder="Username or email" autocapitalize="none" autocomplete="username" style="margin-bottom:10px"><input id="pw" type="password" placeholder="Password" autocomplete="current-password">
-    <p id="er" style="color:#fecaca;min-height:22px"></p><button class="btn full" id="go" style="background:#fff">Sign in</button><p class="small" style="opacity:.8;margin-top:14px">${navigator.onLine === false ? 'You are offline — only returning users can sign in.' : ''}</p></div>`, d => {
-    const go = async () => { $('#er', d).textContent = 'Signing in…'; try { const u = await cloudLogin($('#un', d).value, $('#pw', d).value); startSession(u); d.remove(); resolve(); } catch (e) { $('#er', d).textContent = e.message; $('#pw', d).value = ''; } };
+  return new Promise(resolve => overlay(`<div style="width:100%;max-width:340px;text-align:left"><h2 style="text-align:center">&#9729; ${esc(SET.school_name)}</h2>
+    <div class="row" style="gap:6px;margin-bottom:12px"><button class="btn grow" id="t-in" style="background:#fff">Sign in</button><button class="btn grow" id="t-up" style="background:transparent;color:#fff;border-color:#fff">Create account</button></div>
+    <div id="f-in"><input id="un" placeholder="Username or email" autocapitalize="none" autocomplete="username" style="margin-bottom:10px"><input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+      <button class="btn full" id="go" style="background:#fff;margin-top:12px">Sign in</button>
+      <p style="text-align:center;margin:12px 0 0"><a href="#" id="fg" style="color:#d1fae5;font-size:14px">Forgot password?</a></p></div>
+    <div id="f-up" class="hidden"><input id="rn" placeholder="Full name" autocomplete="name" style="margin-bottom:10px"><input id="ru" placeholder="Choose a username (a-z, 0-9 . _ -)" autocapitalize="none" autocomplete="username" style="margin-bottom:10px">
+      <select id="rr" style="margin-bottom:10px"><option value="parent">I am a parent</option><option value="student">I am a student</option><option value="teacher">I am a teacher</option><option value="admin">I am a school administrator</option></select>
+      <input id="rp" type="password" placeholder="Password (10+ characters)" autocomplete="new-password" style="margin-bottom:10px"><input id="rp2" type="password" placeholder="Repeat password" autocomplete="new-password">
+      <button class="btn full" id="su" style="background:#fff;margin-top:12px">Create account</button>
+      <p class="small" style="opacity:.85;margin-top:10px">New accounts start as Guest. The super administrator approves your role before you can enter.</p></div>
+    <p id="er" style="color:#fecaca;min-height:22px;margin-top:10px"></p><p class="small" style="opacity:.8">${navigator.onLine === false ? 'You are offline — only returning users can sign in.' : ''}</p></div>`, d => {
+    const er = (m, ok) => { const e = $('#er', d); e.textContent = m; e.style.color = ok ? '#bbf7d0' : '#fecaca'; };
+    const show = up => { $('#f-in', d).classList.toggle('hidden', up); $('#f-up', d).classList.toggle('hidden', !up); $('#t-in', d).style.cssText = up ? 'background:transparent;color:#fff;border-color:#fff' : 'background:#fff'; $('#t-up', d).style.cssText = up ? 'background:#fff' : 'background:transparent;color:#fff;border-color:#fff'; er(''); };
+    $('#t-in', d).onclick = () => show(false); $('#t-up', d).onclick = () => show(true);
+    const go = async () => { er('Signing in…', true); try { const u = await cloudLogin($('#un', d).value, $('#pw', d).value); startSession(u); d.remove(); resolve(); } catch (e) { er(e.message); $('#pw', d).value = ''; } };
     $('#go', d).onclick = go; $('#pw', d).onkeydown = e => { if (e.key === 'Enter') go(); }; $('#un', d).focus();
+    $('#su', d).onclick = async () => {
+      const name = $('#rn', d).value.trim(), user = $('#ru', d).value.trim().toLowerCase(), pw = $('#rp', d).value;
+      if (!name) return er('Enter your full name.'); if (!/^[a-z0-9._-]{3,30}$/.test(user)) return er('Username: 3–30 letters/numbers (a-z 0-9 . _ -).');
+      if (pw.length < 10) return er('Use a password with at least 10 characters.'); if (pw !== $('#rp2', d).value) return er('Passwords do not match.');
+      er('Creating your account…', true);
+      try { const r = await Cloud.publicAccountRequest({ action: 'register', username: user, full_name: name, requested_role: $('#rr', d).value, password: pw });
+        show(false); $('#un', d).value = user; er((r && r.message) || 'Account created. Wait for the super administrator to approve it.', true); }
+      catch (e) { er(e.network ? 'No internet connection. Try again when you are online.' : e.message); }
+    };
+    $('#fg', d).onclick = async ev => { ev.preventDefault(); const user = ($('#un', d).value || '').trim().toLowerCase(); if (!user) return er('Type your username above first, then tap “Forgot password?”.');
+      try { const r = await Cloud.publicAccountRequest({ action: 'request_reset', username: user }); er((r && r.message) || 'Request sent to the super administrator.', true); } catch (e) { er(e.network ? 'No internet connection.' : e.message); } };
   }));
 }
 async function newPassword(a) {
@@ -289,6 +305,10 @@ function pagePortal() {
   const marks = currentCtx.rows && currentCtx.rows.length ? currentCtx.rows.map(r => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow"><b>${esc(r.subject)}</b></div><div class="small muted">${esc(r.score)} · ${esc(r.grade)}</div></div>`).join('') : '<p class="muted small">No marks for this term yet.</p>';
   view('My portal', `<div class="card"><div class="row"><div class="grow"><b>${esc(stuName(s))}</b><div class="small muted">${esc(s.admission_no)} · ${esc(className(s.class_id) || 'No class')}</div></div>${ME.role === 'parent' ? '<span class="badge">Parent view</span>' : '<span class="badge">Student view</span>'}</div></div>
     ${ann.length ? `<div class="card"><h2>School notices</h2>${ann.map(a => `<div class="item n info" style="display:block"><div class="t">${esc(a.title)}</div><div>${esc(a.body)}</div><div class="s">${when(a.created_at)} · ${esc(a.audience === 'all' ? 'Everyone' : a.audience === 'student' ? 'Students' : a.audience === 'parent' ? 'Parents' : a.audience)}</div></div>`).join('')}</div>` : ''}
+    <div class="card"><h2>Learning</h2><div class="grid2">
+      <a class="btn" href="#/notes">&#128221; Notes</a><a class="btn" href="#/courses">&#128218; Courses</a>
+      <a class="btn" href="#/join-quiz">&#127919; Join quiz</a><a class="btn" href="#/discussion">&#128172; Forum</a></div>
+      <a class="small" href="#/my-usage" style="display:block;margin-top:8px">What can I use?</a></div>
     <div class="grid2"><div class="card stat"><b>${currentCtx.average || 0}</b><span>Average</span></div><div class="card stat"><b>${currentCtx.position || '-'}</b><span>Position</span></div></div>
     <div class="card"><h2>Latest performance</h2>${marks}</div>
     <div class="card"><h2>Recent attendance</h2>${attendance.length ? attendance.map(r => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow">${esc(r.date)}</div><span class="badge">${ATT_STATUS[r.status] || r.status}</span></div>`).join('') : '<p class="muted small">No attendance recorded yet.</p>'}
@@ -598,7 +618,8 @@ function pageUsers() {
   const pendingApps=Store.all('role_applications').filter(a=>a.status==='pending').length;
   view('Users & roles', `${pendingApps?`<div class="msg warn" onclick="location.hash='#/applications'" style="cursor:pointer">⚠️ ${pendingApps} pending role application${pendingApps>1?'s':''}. <b>Review →</b></div>`:''}<div class="card">${(ME.role==='superadmin'?Store.all('users'):users()).sort((a,b)=>(ROLE[b.role]||0)-(ROLE[a.role]||0)||a.full_name.localeCompare(b.full_name)).map(u => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow"><b>${esc(u.full_name)}</b> ${u.id === ME.id ? '<span class="small muted">(you)</span>' : ''}<div class="small muted">@${esc(u.username)} · <span class="badge ${u.role === 'teacher' ? 'opt' : ''}">${u.role}</span>${u.active === false ? ' · disabled' : ''}</div></div>${ROLE[u.role] <= ROLE[ME.role] && (u.role !== 'superadmin' || ME.role === 'superadmin') ? `<div class='row' style='gap:4px'><button class='btn sm' data-u='${u.id}'>Edit</button>${ME.role==='superadmin'&&u.id!==ME.id?`<button class='btn sm ${u.active!==false?'bad':'pri'}' data-toggle-u='${u.id}'>${u.active!==false?'Suspend':'Activate'}</button>`:''}</div>` : ''}</div>`).join('')}
     <button class="btn pri full" id="nu" style="margin-top:12px">+ Add user</button></div><p class="muted small pad">New users must choose their own password the first time they sign in. Teachers can enter marks and make reports; admins also register students and manage settings; only the super admin controls the exam-entry lock.</p>`, { back: '#/more', tab: 'more' });
-  const roles = () => ME.role === 'superadmin' ? ['teacher', 'admin', 'superadmin', 'student', 'parent'] : ['teacher', 'student', 'parent'];
+  const roles = () => ME.role === 'superadmin' ? ['teacher', 'admin', 'superadmin', 'student', 'parent'] : ['teacher'];   // school admins manage teacher accounts only (the server enforces the same)
+  const mine = u => ME.role === 'superadmin' || (u && u.role === 'teacher');
   const form = u => { const n = !u; u = u || { role: 'teacher', active: true };
     const linkedStudents = students().map(s => ({ v: s.id, t: `${stuName(s)} (${s.admission_no})` }));
     modal(`<h3>${n ? 'Add user' : 'Edit user'}</h3><label>Full name</label><input id="fn" value="${esc(u.full_name)}"><label>Username</label><input id="un" value="${esc(u.username)}" ${n ? '' : 'disabled'} autocapitalize="none">
@@ -614,8 +635,8 @@ function pageUsers() {
         else { const act = $('#ac').checked; if (u.role === 'superadmin' && (!act || role !== 'superadmin') && users().filter(x => x.role === 'superadmin' && x.active !== false).length < 2) throw new Error('There must be at least one active super admin.');
           let r = await Store.put('users', { ...u, full_name: $('#fn').value.trim() || u.full_name, role, active: act, student_id: studentId || null, student_ids: studentId ? [studentId] : [] }); if ($('#pw').value) { if ($('#pw').value.length < 6) throw new Error('Password must be at least 6 characters.'); await setPassword(r, $('#pw').value, true); } }
         closeModal(); pageUsers(); } catch (e) { toast(e.message); } }; }); };
-  $('#nu').onclick = () => form(); $$('[data-u]').forEach(b => b.onclick = () => form(Store.get('users', b.dataset.u)));
-  $$('[data-toggle-u]').forEach(b => b.onclick = async () => { const u=Store.get('users',b.dataset.toggleU); if(!u) return; const active=u.active!==false; await Store.put('users',{...u,active:!active}); toast(active?'User suspended.':'User activated.'); pageUsers(); });
+  $('#nu').onclick = () => form(); $$('[data-u]').forEach(b => b.onclick = () => { const u = Store.get('users', b.dataset.u); if (!mine(u)) return toast('Only the super admin can change this account.'); form(u); });
+  $$('[data-toggle-u]').forEach(b => b.onclick = async () => { const u=Store.get('users',b.dataset.toggleU); if(!u) return; if (!mine(u)) return toast('Only the super admin can change this account.'); const active=u.active!==false; await Store.put('users',{...u,active:!active}); toast(active?'User suspended.':'User activated.'); pageUsers(); });
 }
 async function cloudUserSave(n, u, studentId = null) {
   const body = { action: n ? 'create' : 'update', username: $('#un').value, full_name: $('#fn').value, role: $('#rl').value, student_id: studentId };
@@ -772,7 +793,7 @@ function pageSync() {
     <div class="kv"><div>Last sync</div><div>${st.last ? when(st.last) : 'not yet'}</div><div>Waiting to upload</div><div>${Store.dirty().length} change(s)</div><div>Server</div><div>${esc((c.url || '').replace(/^https?:\/\//, ''))}</div></div>
     ${st.msg ? `<div class="msg warn">${esc(st.msg)}</div>` : ''}<button class="btn pri full" id="sn" style="margin-top:12px">Sync now</button></div>
     ${rej.length ? `<div class="card"><h2>Changes the server refused</h2>${rej.slice(0, 10).map(r => `<div class="lg">${esc(r.store)} — ${esc(r.reason || '')}<div class="muted">${when(r.at)}</div></div>`).join('')}<button class="btn sm full" id="cr" style="margin-top:8px">Clear</button></div>` : ''}
-    ${su ? `<div class="card"><h2>Super admin</h2><p class="muted small">Moving from a phone-only setup? Upload what is on this phone to the cloud once.</p><button class="btn full" id="up">&#11014; Upload this phone's data to the cloud</button><button class="btn bad full" id="dc" style="margin-top:10px">Disconnect from cloud</button></div>` : ''}`, { back: '#/more', tab: 'more' });
+    ${su ? `<div class="card"><h2>Super admin</h2><p class="muted small">Moving from a phone-only setup? Upload what is on this phone to the cloud once.</p><button class="btn full" id="up">&#11014; Upload this phone's data to the cloud</button>${Cloud.usingDefault() ? '' : '<button class="btn bad full" id="dc" style="margin-top:10px">Disconnect from cloud</button>'}</div>` : ''}`, { back: '#/more', tab: 'more' });
   $('#sn').onclick = async () => { await Cloud.syncNow(); pageSync(); };
   if ($('#cr')) $('#cr').onclick = () => { Cloud.clearRejected(); pageSync(); };
   if ($('#up')) $('#up').onclick = () => confirmBox('Upload this phone\'s data?', 'Students, marks, classes, subjects and settings on this phone are sent to the cloud. Newer records already in the cloud are kept.', async () => { await Store.markAllDirty(['users', 'locks', 'notifications']); await Cloud.syncNow(); toast('Uploaded.'); pageSync(); }, 'Upload', false);
@@ -799,7 +820,7 @@ const GUARD = { dashboard: 'teacher', 'edit-public': 'superadmin', applications:
 function route() {
   if (!ME) return; const h = location.hash.replace(/^#\/?/, '') || 'home', [p, a, b] = h.split('/');
   if (isPortalUser()) {
-    if (!['portal', 'account', 'notifications', 'home'].includes(p)) { location.hash = '#/portal'; return; }
+    if (!['portal', 'account', 'notifications', 'home', 'notes', 'notes-read', 'courses', 'course', 'course-learn', 'discussion', 'forum', 'forum-post', 'join-quiz', 'take-quiz', 'my-usage'].includes(p)) { location.hash = '#/portal'; return; }
   }
   if ((GUARD[p] && !atLeast(GUARD[p])) || (p === 'student' && (a === 'new' || b === 'edit') && !atLeast('admin'))) { toast('You do not have access to that page.'); location.hash = isPortalUser() ? '#/portal' : '#/home'; return; }
   const pages = { home: pageHome, portal: pagePortal, students: pageStudents, student: () => (a === 'new' || b === 'edit') ? pageStudentForm(a === 'new' ? 'new' : a) : pageProfile(a), marks: pageMarks, attendance: pageAttendance, announcements: pageAnnouncements, reports: pageReports, more: pageMore, locks: pageLocks, notifications: pageNotifications,
@@ -814,12 +835,12 @@ addEventListener('hashchange', () => { closeModal(); route(); });
 (async function boot() {
   Security.init();
   AppConfig.applyBranding();
-  PluginLoader.initAll();
-  if (window.StudentAuth) await StudentAuth.ensureCodes();
   const didAutoConfig = await AppConfig.checkURLConfig();
   if (didAutoConfig) return location.reload();
   try {
-    await Store.init(); refreshSettings(); await migrate();
+    await Store.init();
+    for (const k of ['groq_api_key', 'callmebot_apikey', 'africas_talking_apikey']) if (Store.get('settings', k)) await Store.dropLocal('settings', k);   // secrets live only on the server now
+    refreshSettings(); await migrate();
     if (Cloud.enabled()) {
       ME = sessionUser(); if (ME && !Cloud.hasSession() && navigator.onLine !== false) { endSession(); ME = null; }
       if (!ME) await cloudLoginScreen();
@@ -827,6 +848,8 @@ addEventListener('hashchange', () => { closeModal(); route(); });
       await seed(); Cloud.on('changed', onCloudChanged); Cloud.on('status', updateSyncBtn); Cloud.on('authLost', () => { toast('You were signed out. Please sign in again.'); setTimeout(() => { endSession(); location.reload(); }, 1500); }); Cloud.start();
     } else if (!Store.all('users').length) { await setupScreen(); refreshSettings(); if (!ME) await loginScreen(); await seed(); }
     else { ME = sessionUser(); if (!ME) await loginScreen(); await seed(); }
+    PluginLoader.initAll();
+    if (window.StudentAuth && atLeast('admin')) { try { await StudentAuth.ensureCodes(); } catch (e) { console.warn(e); } }
     if (ME.role === 'guest') { route(); return; }
     if (ME.role === 'student' && !ME.username?.startsWith('stu_')) { route(); return; }
     if (ME.must_change) await mustChangePassword();

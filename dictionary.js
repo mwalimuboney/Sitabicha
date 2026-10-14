@@ -225,7 +225,7 @@ const Dictionary = (() => {
       </div>
       <div class="card">
         <h2>🤖 AI Kiswahili Sarufi</h2>
-        <p class="muted small">Powered by Groq (add groq_api_key in Settings).</p>
+        <p class="muted small">Powered by Groq (key kept safely on the server).</p>
         <textarea id="sw-text" placeholder="Andika insha au sentensi yako hapa..." style="min-height:100px"></textarea>
         <button class="btn full" id="sw-check" style="margin-top:8px">Angalia Sarufi (AI)</button>
         <div id="sw-result" style="margin-top:10px"></div>
@@ -253,11 +253,11 @@ const Dictionary = (() => {
     document.getElementById('sw-check').onclick = async () => {
       const text = document.getElementById('sw-text').value.trim();
       if (!text) return toast('Andika maandishi kwanza.');
-      const key = SET.groq_api_key || '';
-      if (!key) return toast('Ongeza groq_api_key katika Mipangilio.');
+      const key = (window.AIReady&&AIReady()?'server':'');
+      if (!key) return toast('AI haipatikani. Ingia ukiwa na intaneti; msimamizi mkuu aweke ufunguo kwenye seva.');
       document.getElementById('sw-result').innerHTML = '<p class="muted small">AI inangalia sarufi...</p>';
       try {
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        const res = await groqFetch('https://api.groq.com/openai/v1/chat/completions', {
           method:'POST', headers:{'Authorization':'Bearer '+key,'Content-Type':'application/json'},
           body: JSON.stringify({ model:'llama3-8b-8192', messages:[{role:'user', content:`Angalia sarufi ya sentensi hii ya Kiswahili. Toa maelezo mafupi ya makosa (kama yako) na ushauri wa kusahihisha. Jibu kwa Kiswahili:\n\n"${text}"`}], max_tokens:400 })
         });

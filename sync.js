@@ -4,7 +4,8 @@
 const Cloud = (() => {
   const CFG = 'sr_cloud', SES = 'sr_cloud_session', CUR = 'sr_cursor', REJ = 'sr_rejected';
   const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } };
-  const cfg = () => lsGet(CFG), sess = () => lsGet(SES);
+  const dflt = () => { const d = (typeof window !== 'undefined') && window.SR_DEFAULT_CLOUD; return d && d.url && d.anon ? { url: String(d.url).trim(), anon: String(d.anon).trim(), domain: String(d.domain || 'school-records.app').trim().toLowerCase() } : null; };
+  const cfg = () => lsGet(CFG) || dflt(), sess = () => lsGet(SES), usingDefault = () => !lsGet(CFG) && !!dflt();
   const enabled = () => { const c = cfg(); return !!(c && c.url && c.anon); };
   const status = { state: 'idle', last: null, msg: '', pending: 0 };
   const cb = { changed: () => {}, authLost: () => {}, status: () => {} };
@@ -59,8 +60,9 @@ const Cloud = (() => {
     }
     if (last) localStorage.setItem(CUR, last); return changed;
   }
-  async function push() {
-    const out = { rejected: [] }; let dirty = Store.dirty();
+  const PORTAL_PUSH = ['quiz_responses', 'forum_posts', 'forum_replies', 'course_progress'];   // students/parents may only send their own learning activity
+  async function push(only) {
+    const out = { rejected: [] }; let dirty = Store.dirty(); if (only) dirty = dirty.filter(x => only.includes(x.store));
     for (let i = 0; i < dirty.length; i += 40) {
       const batch = dirty.slice(i, i + 40), sent = new Map(batch.map(({ store, rec }) => [store + '|' + rec.id, rec.updated_at]));
       const res = await api('/rest/v1/rpc/sync_push', { method: 'POST', body: { p_records: batch.map(({ store, rec }) => { const d = { ...rec }; delete d._d; return { store, data: d }; }) } });
@@ -83,7 +85,7 @@ const Cloud = (() => {
       try {
         const current = sess() && Store.get('users', sess().user_id);
         const portal = current && ['student', 'parent'].includes(current.role);
-        const p = portal ? { rejected: [] } : await push();
+        const p = await push(portal ? PORTAL_PUSH : null);
         await pullProfiles(portal ? await accountInfo() : null);
         const changed = await pull();
         status.last = new Date().toISOString(); setStatus('ok'); cb.changed(changed, p.rejected); return { changed, rejected: p.rejected };
@@ -108,5 +110,15 @@ const Cloud = (() => {
   const signOut = () => localStorage.removeItem(SES);
   const connect = c => localStorage.setItem(CFG, JSON.stringify({ url: c.url.trim(), anon: c.anon.trim(), domain: (c.domain || 'school-records.app').trim().toLowerCase() }));
   const disconnect = () => { [CFG, SES, CUR, REJ].forEach(k => localStorage.removeItem(k)); };
-  return { enabled, cfg, status, rejected, signIn, signOut, syncNow, start, pull, push, pullProfiles, accountInfo, adminUsers, publicAccountRequest, changePassword, resetCursor, connect, disconnect, emailFor, hasSession: () => !!sess(), on: (k, f) => { cb[k] = f; }, clearRejected: () => localStorage.removeItem(REJ) };
+  return { rpc: (name, body) => api('/rest/v1/rpc/' + name, { method: 'POST', body: body || {} }), ai: body => api('/functions/v1/ai-proxy', { method: 'POST', body }), sendMessage: body => api('/functions/v1/send-sms', { method: 'POST', body }), usingDefault, enabled, cfg, status, rejected, signIn, signOut, syncNow, start, pull, push, pullProfiles, accountInfo, adminUsers, publicAccountRequest, changePassword, resetCursor, connect, disconnect, emailFor, hasSession: () => !!sess(), on: (k, f) => { cb[k] = f; }, clearRejected: () => localStorage.removeItem(REJ) };
 })();
+
+/* AI runs on the server (supabase/functions/ai-proxy): the Groq key is never stored in the database or on phones. */
+window.AIReady = () => Cloud.enabled() && Cloud.hasSession();
+window.groqFetch = async (_url, init) => {
+  try { const j = await Cloud.ai(JSON.parse(init.body)); return new Response(JSON.stringify(j), { status: 200, headers: { 'Content-Type': 'application/json' } }); }
+  catch (e) { if (window.toast) toast(e.message, 6000); return new Response(JSON.stringify({ error: { message: e.message } }), { status: e.status || 500, headers: { 'Content-Type': 'application/json' } }); }
+};
+
+{ const _sm = Cloud.sendMessage; let quiet = 0;
+  Cloud.sendMessage = async b => { try { return await _sm(b); } catch (e) { if (window.toast && Date.now() > quiet) { quiet = Date.now() + 5000; toast(e.message, 6000); } throw e; } }; }

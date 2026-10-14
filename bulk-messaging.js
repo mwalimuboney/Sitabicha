@@ -35,10 +35,8 @@ const BulkMessaging = (() => {
       let sent = 0;
       for (const s of studs) {
         const phone = s.guardian_phone || s.guardian_phone2;
-        const apikey = s.guardian_callmebot_apikey || SET.callmebot_apikey || '';
-        if (!phone || !apikey) continue;
-        let d = String(phone).replace(/\D/g,''); if (d.startsWith('0')) d='254'+d.slice(1);
-        try { await fetch(`https://api.callmebot.com/whatsapp.php?phone=${d}&text=${encodeURIComponent(msg)}&apikey=${apikey}`); sent++; } catch(e){}
+        if (!phone) continue;
+        try { await Cloud.sendMessage({ channel: 'whatsapp', phone, message: msg, apikey: s.guardian_callmebot_apikey || undefined }); sent++; } catch(e){}
       }
       await Store.put('bulk_messages',{id:Core.uid(),type:'WhatsApp',message:msg,sent_count:sent,created_at:new Date().toISOString(),by:ME.id});
       document.getElementById('bm-res').innerHTML=`<div class="msg good">✅ WhatsApp sent to ${sent} of ${studs.length} guardians.</div>`;
@@ -47,9 +45,7 @@ const BulkMessaging = (() => {
     document.getElementById('bm-sms').onclick = async () => {
       const msg = document.getElementById('bm-msg').value.trim();
       if (!msg) return toast('Enter a message.');
-      const atKey = SET.africas_talking_apikey || '';
-      const atUser = SET.africas_talking_username || 'sandbox';
-      if (!atKey) return toast('Add africas_talking_apikey in Settings first.');
+      if (!Cloud.hasSession()) return toast('Sign in with internet to send SMS.');
       const studs = getStudents();
       const phones = studs.map(s=>s.guardian_phone||s.guardian_phone2).filter(Boolean).map(p=>{ let d=String(p).replace(/\D/g,''); return d.startsWith('0')?'254'+d.slice(1):d; });
       const unique = [...new Set(phones)];
@@ -57,11 +53,7 @@ const BulkMessaging = (() => {
       for (let i=0;i<unique.length;i+=50) {
         const batch = unique.slice(i,i+50);
         try {
-          await fetch('https://api.africastalking.com/version1/messaging',{
-            method:'POST',
-            headers:{'apiKey':atKey,'Content-Type':'application/x-www-form-urlencoded','Accept':'application/json'},
-            body:`username=${atUser}&to=${encodeURIComponent(batch.join(','))}&message=${encodeURIComponent(msg)}`
-          });
+          await Cloud.sendMessage({ channel: 'sms', phones: batch, message: msg });
           sent+=batch.length;
         } catch(e){}
       }

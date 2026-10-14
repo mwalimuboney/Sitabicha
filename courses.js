@@ -58,7 +58,7 @@ const CoursesLMS = (() => {
           protected:document.getElementById('co-prot').checked,
           created_by:ME.id,created_at:c.created_at||new Date().toISOString()});
         closeModal();
-        if(useAI&&SET.groq_api_key){ await aiOutlineCourse(saved.id); }
+        if(useAI&&AIReady()){ await aiOutlineCourse(saved.id); }
         toast('Saved.'); pageCourseDetail(saved.id);
       };
     });
@@ -68,9 +68,9 @@ const CoursesLMS = (() => {
     const c=Store.get('courses',courseId); if(!c) return;
     toast('AI building course outline... ⏳',12000);
     try{
-      const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      const res=await groqFetch('https://api.groq.com/openai/v1/chat/completions',{
         method:'POST',
-        headers:{'Authorization':'Bearer '+SET.groq_api_key,'Content-Type':'application/json'},
+        headers:{'Authorization':'Bearer server','Content-Type':'application/json'},
         body:JSON.stringify({model:'llama3-8b-8192',messages:[{role:'user',content:`Create a structured ${c.subject||'subject'} course outline for ${c.form_level||'high school'} titled "${c.title}".
 Return JSON array of modules, each with lessons:
 [{"title":"Topic 1 name","description":"...","lessons":[{"title":"Subtopic 1.1","content_hint":"key points to cover"},{"title":"Subtopic 1.2","content_hint":"..."}]}]

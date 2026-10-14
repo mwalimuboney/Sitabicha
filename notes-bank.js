@@ -118,7 +118,7 @@ const NotesBank = (() => {
           subtopic:document.getElementById('nb-stopic').value.trim(),
           content,text_content,file_name,file_data,file_type,
           created_by:ME.id,created_at:n.created_at||new Date().toISOString()});
-        if(document.getElementById('nb-ai').checked&&SET.groq_api_key){
+        if(document.getElementById('nb-ai').checked&&AIReady()){
           aiEnhanceNote(saved.id);
         }
         closeModal(); toast('Saved.'); pageNotes();
@@ -127,12 +127,12 @@ const NotesBank = (() => {
   }
 
   async function aiEnhanceNote(noteId) {
-    const n=Store.get('notes_bank',noteId); if(!n||!n.content||!SET.groq_api_key) return;
+    const n=Store.get('notes_bank',noteId); if(!n||!n.content||!AIReady()) return;
     toast('AI enhancing note... ⏳',8000);
     try{
-      const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+      const res=await groqFetch('https://api.groq.com/openai/v1/chat/completions',{
         method:'POST',
-        headers:{'Authorization':'Bearer '+SET.groq_api_key,'Content-Type':'application/json'},
+        headers:{'Authorization':'Bearer server','Content-Type':'application/json'},
         body:JSON.stringify({model:'llama3-8b-8192',messages:[{role:'user',content:`Improve and structure these school notes for ${n.subject||'science'} topic "${n.topic||n.title}". Add clear headings, key points, summary and 3 practice questions at the end. Return HTML format:\n\n${n.content.slice(0,3000)}`}],max_tokens:2000})
       });
       const j=await res.json();

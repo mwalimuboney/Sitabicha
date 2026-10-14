@@ -36,8 +36,8 @@ const AIExamGen = (() => {
   }
 
   function genExamModal() {
-    const apiKey = SET.groq_api_key||'';
-    if(!apiKey) return toast('Add groq_api_key in Settings first.');
+    const apiKey = (window.AIReady&&AIReady()?'server':'');
+    if(!apiKey) return toast('AI is not available. Sign in with internet; the super admin must set up the AI key on the server.');
     const subs = Store.all('subjects').filter(s=>s.active!==false);
     modal(`<h3>✨ Generate Exam Paper</h3>
       <label>Subject</label><select id="ae-sub">${opts(subs.map(s=>({v:s.name,t:s.name})),subs[0]?.name||'')}</select>
@@ -108,7 +108,7 @@ Generate a complete exam paper as JSON:
   ]
 }
 Return ONLY valid JSON, no extra text.`;
-          const res=await fetch('https://api.groq.com/openai/v1/chat/completions',{
+          const res=await groqFetch('https://api.groq.com/openai/v1/chat/completions',{
             method:'POST',
             headers:{'Authorization':'Bearer '+apiKey,'Content-Type':'application/json'},
             body:JSON.stringify({model:'llama3-70b-8192',messages:[{role:'user',content:prompt}],max_tokens:4000,temperature:0.6})
