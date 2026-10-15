@@ -124,13 +124,14 @@ async function cloudLogin(login, password) {
   try {
     const uid = await Cloud.signIn(login, password); await Cloud.pullProfiles(); const u = Store.get('users', uid);
     if (u && u.active === false && u.role === 'guest') { Cloud.signOut(); throw new Error('Your account was created and is waiting for the super administrator to approve it. Try again later.'); }
-    if (!u || u.active === false) { Cloud.signOut(); throw new Error('This account is not active. Ask your super admin.'); }
+    if (!u) { Cloud.signOut(); throw new Error('Your sign-in works, but it is not linked to a school profile yet. Ask the super administrator to link it (Users & roles → Accounts not linked yet).'); }
+    if (u.active === false) { Cloud.signOut(); throw new Error('This account is not active. Ask your super admin.'); }
     const salt = Core.uid(), cached = { uid, salt, hash: await hashPw(password, salt) };
     offlineCache(login, cached);
     offlineCache(u.username, cached);
     return u;
   } catch (e) {
-    if (!e.network) { if (e.status === 400 || e.status === 401) throw new Error('Wrong username or password (or the account is disabled).'); throw e; }
+    if (!e.network) { if (e.status === 400 || e.status === 401) throw new Error(/invalid login|credentials/i.test(e.message) ? 'Wrong username, email, phone or password (or the account is disabled).' : e.message); throw e; }
     let off = null; try { off = JSON.parse(localStorage.getItem('sr_off_' + login) || 'null'); } catch (x) {}
     const u = off && Store.get('users', off.uid);
     if (!off || !u || u.active === false || await hashPw(password, off.salt) !== off.hash) throw new Error('No internet. This phone can only sign in offline for people who have signed in here before.');
@@ -141,10 +142,13 @@ function offlineCache(login, credentials) { localStorage.setItem('sr_off_' + log
 function cloudLoginScreen() {
   return new Promise(resolve => overlay(`<div style="width:100%;max-width:340px;text-align:left"><h2 style="text-align:center">&#9729; ${esc(SET.school_name)}</h2>
     <div class="row" style="gap:6px;margin-bottom:12px"><button class="btn grow" id="t-in" style="background:#fff">Sign in</button><button class="btn grow" id="t-up" style="background:transparent;color:#fff;border-color:#fff">Create account</button></div>
-    <div id="f-in"><input id="un" placeholder="Username or email" autocapitalize="none" autocomplete="username" style="margin-bottom:10px"><input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+    <div id="f-in"><input id="un" placeholder="Username, email or phone" autocapitalize="none" autocomplete="username" style="margin-bottom:10px"><input id="pw" type="password" placeholder="Password" autocomplete="current-password">
       <button class="btn full" id="go" style="background:#fff;margin-top:12px">Sign in</button>
-      <p style="text-align:center;margin:12px 0 0"><a href="#" id="fg" style="color:#d1fae5;font-size:14px">Forgot password?</a></p></div>
+      <p style="text-align:center;margin:12px 0 0"><a href="#" id="fg" style="color:#d1fae5;font-size:14px">Forgot password?</a></p>
+      ${AuthUI.hasPending() ? '<p style="text-align:center;margin:8px 0 0"><a href="#" id="rw" style="color:#fde68a;font-size:14px">Check my reset request</a></p>' : ''}</div>
     <div id="f-up" class="hidden"><input id="rn" placeholder="Full name" autocomplete="name" style="margin-bottom:10px"><input id="ru" placeholder="Choose a username (a-z, 0-9 . _ -)" autocapitalize="none" autocomplete="username" style="margin-bottom:10px">
+      <input id="re" type="email" placeholder="Email" autocapitalize="none" autocomplete="email" style="margin-bottom:10px"><input id="rph" type="tel" placeholder="Phone, e.g. 0712 345 678" autocomplete="tel" style="margin-bottom:4px">
+      <p class="small" style="opacity:.85;margin:0 0 10px">Add at least one. You can sign in with them and get password reset codes there.</p>
       <select id="rr" style="margin-bottom:10px"><option value="parent">I am a parent</option><option value="student">I am a student</option><option value="teacher">I am a teacher</option><option value="admin">I am a school administrator</option></select>
       <input id="rp" type="password" placeholder="Password (10+ characters)" autocomplete="new-password" style="margin-bottom:10px"><input id="rp2" type="password" placeholder="Repeat password" autocomplete="new-password">
       <button class="btn full" id="su" style="background:#fff;margin-top:12px">Create account</button>
@@ -158,14 +162,15 @@ function cloudLoginScreen() {
     $('#su', d).onclick = async () => {
       const name = $('#rn', d).value.trim(), user = $('#ru', d).value.trim().toLowerCase(), pw = $('#rp', d).value;
       if (!name) return er('Enter your full name.'); if (!/^[a-z0-9._-]{3,30}$/.test(user)) return er('Username: 3–30 letters/numbers (a-z 0-9 . _ -).');
+      const email = $('#re', d).value.trim(), phone = $('#rph', d).value.trim(); if (!email && !phone) return er('Add an email or a phone number so you can recover your password.');
       if (pw.length < 10) return er('Use a password with at least 10 characters.'); if (pw !== $('#rp2', d).value) return er('Passwords do not match.');
       er('Creating your account…', true);
-      try { const r = await Cloud.publicAccountRequest({ action: 'register', username: user, full_name: name, requested_role: $('#rr', d).value, password: pw });
+      try { const r = await Cloud.publicAccountRequest({ action: 'register', username: user, full_name: name, requested_role: $('#rr', d).value, password: pw, email, phone });
         show(false); $('#un', d).value = user; er((r && r.message) || 'Account created. Wait for the super administrator to approve it.', true); }
       catch (e) { er(e.network ? 'No internet connection. Try again when you are online.' : e.message); }
     };
-    $('#fg', d).onclick = async ev => { ev.preventDefault(); const user = ($('#un', d).value || '').trim().toLowerCase(); if (!user) return er('Type your username above first, then tap “Forgot password?”.');
-      try { const r = await Cloud.publicAccountRequest({ action: 'request_reset', username: user }); er((r && r.message) || 'Request sent to the super administrator.', true); } catch (e) { er(e.network ? 'No internet connection.' : e.message); } };
+    $('#fg', d).onclick = ev => { ev.preventDefault(); AuthUI.recover($('#un', d).value || ''); };
+    const rw = $('#rw', d); if (rw) rw.onclick = ev => { ev.preventDefault(); AuthUI.recover('', true); };
   }));
 }
 async function newPassword(a) {
@@ -174,9 +179,11 @@ async function newPassword(a) {
 }
 async function oldPwOk(p) { if (Cloud.enabled()) { try { await Cloud.signIn(ME.username, p); return true; } catch (e) { return false; } } return await hashPw(p, ME.salt) === ME.pw_hash; }
 function mustChangePassword() {
-  return new Promise(resolve => modal(`<h3>Choose a new password</h3><p class="muted small">Your password was set by an administrator. Pick your own to continue.</p><label>New password (6+)</label><input id="a" type="password"><label>Repeat</label><input id="b" type="password"><div id="er" class="msg bad hidden"></div><div class="row"><button class="btn pri grow" id="ok">Save password</button></div>`, () => {
-    $('#ok').onclick = async () => { const a = $('#a').value; if (a.length < 6) { $('#er').textContent = 'At least 6 characters.'; return $('#er').classList.remove('hidden'); } if (a !== $('#b').value) { $('#er').textContent = 'Passwords do not match.'; return $('#er').classList.remove('hidden'); }
-      try { ME = await newPassword(a); } catch (e) { $('#er').textContent = e.message; return $('#er').classList.remove('hidden'); } closeModal(); resolve(); };
+  return new Promise(resolve => modal(`<h3>Choose a new password</h3><p class="muted small">You signed in with a temporary password. Choose your own to continue — nothing else opens until you do.</p><label>New password (10+)</label><input id="a" type="password"><label>Repeat</label><input id="b" type="password"><div id="er" class="msg bad hidden"></div><div class="row"><button class="btn pri grow" id="ok">Save password</button></div>`, () => {
+    $('#ok').onclick = async () => { const a = $('#a').value; if (a.length < 10) { $('#er').textContent = 'At least 10 characters.'; return $('#er').classList.remove('hidden'); } if (a !== $('#b').value) { $('#er').textContent = 'Passwords do not match.'; return $('#er').classList.remove('hidden'); }
+      try { ME = await newPassword(a); } catch (e) { $('#er').textContent = e.message; return $('#er').classList.remove('hidden'); }
+      if (Cloud.enabled() && Cloud.hasSession()) { try { await Cloud.syncNow(); } catch (e) {} ME = Store.get('users', ME.id) || ME; }   // school data stays locked until the new password is saved
+      closeModal(); resolve(); };
     $('#modal').onclick = null; }));
 }
 
@@ -615,8 +622,9 @@ function pageNotifications() {
 
 /* ================= users & account ================= */
 function pageUsers() {
+  setTimeout(() => AuthUI.mountUsersExtras(document.getElementById('auth-extra')), 0);
   const pendingApps=Store.all('role_applications').filter(a=>a.status==='pending').length;
-  view('Users & roles', `${pendingApps?`<div class="msg warn" onclick="location.hash='#/applications'" style="cursor:pointer">⚠️ ${pendingApps} pending role application${pendingApps>1?'s':''}. <b>Review →</b></div>`:''}<div class="card">${(ME.role==='superadmin'?Store.all('users'):users()).sort((a,b)=>(ROLE[b.role]||0)-(ROLE[a.role]||0)||a.full_name.localeCompare(b.full_name)).map(u => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow"><b>${esc(u.full_name)}</b> ${u.id === ME.id ? '<span class="small muted">(you)</span>' : ''}<div class="small muted">@${esc(u.username)} · <span class="badge ${u.role === 'teacher' ? 'opt' : ''}">${u.role}</span>${u.active === false ? ' · disabled' : ''}</div></div>${ROLE[u.role] <= ROLE[ME.role] && (u.role !== 'superadmin' || ME.role === 'superadmin') ? `<div class='row' style='gap:4px'><button class='btn sm' data-u='${u.id}'>Edit</button>${ME.role==='superadmin'&&u.id!==ME.id?`<button class='btn sm ${u.active!==false?'bad':'pri'}' data-toggle-u='${u.id}'>${u.active!==false?'Suspend':'Activate'}</button>`:''}</div>` : ''}</div>`).join('')}
+  view('Users & roles', `<div id="auth-extra"></div>${pendingApps?`<div class="msg warn" onclick="location.hash='#/applications'" style="cursor:pointer">⚠️ ${pendingApps} pending role application${pendingApps>1?'s':''}. <b>Review →</b></div>`:''}<div class="card">${(ME.role==='superadmin'?Store.all('users'):users()).sort((a,b)=>(ROLE[b.role]||0)-(ROLE[a.role]||0)||a.full_name.localeCompare(b.full_name)).map(u => `<div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd)"><div class="grow"><b>${esc(u.full_name)}</b> ${u.id === ME.id ? '<span class="small muted">(you)</span>' : ''}<div class="small muted">@${esc(u.username)} · <span class="badge ${u.role === 'teacher' ? 'opt' : ''}">${u.role}</span>${u.active === false ? ' · disabled' : ''}</div></div>${ROLE[u.role] <= ROLE[ME.role] && (u.role !== 'superadmin' || ME.role === 'superadmin') ? `<div class='row' style='gap:4px'><button class='btn sm' data-u='${u.id}'>Edit</button>${ME.role==='superadmin'&&u.id!==ME.id?`<button class='btn sm ${u.active!==false?'bad':'pri'}' data-toggle-u='${u.id}'>${u.active!==false?'Suspend':'Activate'}</button>`:''}</div>` : ''}</div>`).join('')}
     <button class="btn pri full" id="nu" style="margin-top:12px">+ Add user</button></div><p class="muted small pad">New users must choose their own password the first time they sign in. Teachers can enter marks and make reports; admins also register students and manage settings; only the super admin controls the exam-entry lock.</p>`, { back: '#/more', tab: 'more' });
   const roles = () => ME.role === 'superadmin' ? ['teacher', 'admin', 'superadmin', 'student', 'parent'] : ['teacher'];   // school admins manage teacher accounts only (the server enforces the same)
   const mine = u => ME.role === 'superadmin' || (u && u.role === 'teacher');
@@ -625,28 +633,33 @@ function pageUsers() {
     modal(`<h3>${n ? 'Add user' : 'Edit user'}</h3><label>Full name</label><input id="fn" value="${esc(u.full_name)}"><label>Username</label><input id="un" value="${esc(u.username)}" ${n ? '' : 'disabled'} autocapitalize="none">
       <label>Role</label><select id="rl" ${n || ME.role === 'superadmin' ? '' : 'disabled'}>${opts(roles(), u.role)}</select>
       ${['student', 'parent'].includes(u.role || '') || (n && ['student', 'parent'].includes((u.role || 'teacher'))) ? `<label>Linked student</label><select id="std"><option value="">None</option>${opts(linkedStudents, u.student_id || '')}</select>` : ''}
-      <label>${n ? 'Temporary password (6+)' : 'Reset password (leave empty to keep)'}</label><input id="pw" type="text" autocomplete="off">
+      <label>Email</label><input id="em" type="email" value="${esc(u.email || '')}" autocapitalize="none"><label>Phone</label><input id="ph" type="tel" value="${esc(u.phone || '')}" placeholder="0712 345 678">
+      <label>${n ? 'Password (leave empty to generate a temporary one)' : 'Set a specific password (leave empty to keep)'}</label><input id="pw" type="text" autocomplete="off">
+      ${n || !Cloud.enabled() ? '' : '<button class="btn full" id="rs" style="margin-top:8px">Reset password (generate temporary)</button>'}
       ${n ? '' : `<label class="chk"><input type="checkbox" id="ac" ${u.active !== false ? 'checked' : ''} ${u.id === ME.id ? 'disabled' : ''}><span>Account active</span></label>`}<div class="row"><button class="btn grow" id="x">Cancel</button><button class="btn pri grow" id="ok">Save</button></div>`, () => {
       $('#x').onclick = closeModal;
-      $('#ok').onclick = async () => { try {
+      if ($('#rs')) $('#rs').onclick = () => confirmBox('Reset this password?', 'A temporary password is generated. They must choose their own at next sign-in.', async () => { const r = await Cloud.adminUsers({ action: 'reset', user_id: u.id }); await Cloud.pullProfiles(); AuthUI.showTemp('Temporary password', r.temp_password); }, 'Reset', false);
+      $('#ok').onclick = async () => { try { let temp = null;
         const role = $('#rl').value;
         const studentId = ['student', 'parent'].includes(role) ? $('#std')?.value || null : null;
-        if (Cloud.enabled()) await cloudUserSave(n, u, studentId); else if (n) await createUser({ username: $('#un').value, full_name: $('#fn').value, role, password: $('#pw').value, student_id: studentId });
+        if (Cloud.enabled()) temp = await cloudUserSave(n, u, studentId); else if (n) await createUser({ username: $('#un').value, full_name: $('#fn').value, role, password: $('#pw').value, student_id: studentId });
         else { const act = $('#ac').checked; if (u.role === 'superadmin' && (!act || role !== 'superadmin') && users().filter(x => x.role === 'superadmin' && x.active !== false).length < 2) throw new Error('There must be at least one active super admin.');
           let r = await Store.put('users', { ...u, full_name: $('#fn').value.trim() || u.full_name, role, active: act, student_id: studentId || null, student_ids: studentId ? [studentId] : [] }); if ($('#pw').value) { if ($('#pw').value.length < 6) throw new Error('Password must be at least 6 characters.'); await setPassword(r, $('#pw').value, true); } }
-        closeModal(); pageUsers(); } catch (e) { toast(e.message); } }; }); };
+        closeModal(); pageUsers(); if (temp) AuthUI.showTemp('Temporary password', temp, 'Give this to the new user. They must choose their own password the first time they sign in.'); } catch (e) { toast(e.message); } }; }); };
   $('#nu').onclick = () => form(); $$('[data-u]').forEach(b => b.onclick = () => { const u = Store.get('users', b.dataset.u); if (!mine(u)) return toast('Only the super admin can change this account.'); form(u); });
   $$('[data-toggle-u]').forEach(b => b.onclick = async () => { const u=Store.get('users',b.dataset.toggleU); if(!u) return; if (!mine(u)) return toast('Only the super admin can change this account.'); const active=u.active!==false; await Store.put('users',{...u,active:!active}); toast(active?'User suspended.':'User activated.'); pageUsers(); });
 }
 async function cloudUserSave(n, u, studentId = null) {
-  const body = { action: n ? 'create' : 'update', username: $('#un').value, full_name: $('#fn').value, role: $('#rl').value, student_id: studentId };
-  if (n) await Cloud.adminUsers({ ...body, password: $('#pw').value });
+  const body = { action: n ? 'create' : 'update', username: $('#un').value, full_name: $('#fn').value, role: $('#rl').value, student_id: studentId, email: $('#em').value, phone: $('#ph').value };
+  let temp = null;
+  if (n) { const r = await Cloud.adminUsers({ ...body, password: $('#pw').value }); temp = r && r.temp_password; }
   else { await Cloud.adminUsers({ ...body, user_id: u.id, active: $('#ac').checked }); if ($('#pw').value) await Cloud.adminUsers({ action: 'reset', user_id: u.id, password: $('#pw').value }); }
-  await Cloud.pullProfiles();
+  await Cloud.pullProfiles(); return temp;
 }
 function pageAccount() {
-  view('My account', `<div class="card"><b>${esc(ME.full_name)}</b><div class="muted small">@${esc(ME.username)} · ${ME.role}</div></div><div class="card"><h2>Change password</h2><label>Current password</label><input id="o" type="password"><label>New password (6+)</label><input id="a" type="password"><label>Repeat new password</label><input id="b" type="password"><button class="btn pri full" id="ok" style="margin-top:12px">Change password</button></div>`, { back: '#/more', tab: 'more' });
-  $('#ok').onclick = async () => { if (!(await oldPwOk($('#o').value))) return toast('Current password is wrong.'); const a = $('#a').value; if (a.length < 6) return toast('At least 6 characters.'); if (a !== $('#b').value) return toast('Passwords do not match.'); try { ME = await newPassword(a); } catch (e) { return toast(e.message); } toast('Password changed.'); location.hash = '#/more'; };
+  setTimeout(() => AuthUI.mountContact(document.getElementById('auth-contact')), 0);
+  view('My account', `<div class="card"><b>${esc(ME.full_name)}</b><div class="muted small">@${esc(ME.username)} · ${ME.role}</div></div><div id="auth-contact"></div><div class="card"><h2>Change password</h2><label>Current password</label><input id="o" type="password"><label>New password (10+)</label><input id="a" type="password"><label>Repeat new password</label><input id="b" type="password"><button class="btn pri full" id="ok" style="margin-top:12px">Change password</button></div>`, { back: '#/more', tab: 'more' });
+  $('#ok').onclick = async () => { if (!(await oldPwOk($('#o').value))) return toast('Current password is wrong.'); const a = $('#a').value; if (a.length < 10) return toast('At least 10 characters.'); if (a !== $('#b').value) return toast('Passwords do not match.'); try { ME = await newPassword(a); } catch (e) { return toast(e.message); } toast('Password changed.'); location.hash = '#/more'; };
 }
 
 /* ================= activity log ================= */
@@ -848,11 +861,11 @@ addEventListener('hashchange', () => { closeModal(); route(); });
       await seed(); Cloud.on('changed', onCloudChanged); Cloud.on('status', updateSyncBtn); Cloud.on('authLost', () => { toast('You were signed out. Please sign in again.'); setTimeout(() => { endSession(); location.reload(); }, 1500); }); Cloud.start();
     } else if (!Store.all('users').length) { await setupScreen(); refreshSettings(); if (!ME) await loginScreen(); await seed(); }
     else { ME = sessionUser(); if (!ME) await loginScreen(); await seed(); }
+    if (ME.must_change && ME.role !== 'guest') await mustChangePassword();   // a temporary password must be replaced before anything else opens (school data is locked until then)
     PluginLoader.initAll();
     if (window.StudentAuth && atLeast('admin')) { try { await StudentAuth.ensureCodes(); } catch (e) { console.warn(e); } }
     if (ME.role === 'guest') { route(); return; }
     if (ME.role === 'student' && !ME.username?.startsWith('stu_')) { route(); return; }
-    if (ME.must_change) await mustChangePassword();
     prevUnread = unreadNotifs().length; route(); if (prevUnread) toast(`You have ${prevUnread} new notification${prevUnread > 1 ? 's' : ''}.`, 4000);
   } catch (e) {
     $('#main').innerHTML = `<div class="card"><h2>Could not open the local database</h2><p class="muted">${esc(e.message || e)}</p><p class="small">If you are in a private/incognito tab, open the app in a normal Chrome tab instead.</p></div>`;

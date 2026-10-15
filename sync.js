@@ -33,20 +33,28 @@ const Cloud = (() => {
   async function token() { let s = sess(); if (!s) { const e = new Error('Signed out'); e.authLost = true; throw e; } if (s.expires_at * 1000 - Date.now() < 60000) { await refresh(); s = sess(); } return s.access_token; }
   const api = async (path, opt = {}) => raw(path, { ...opt, token: await token() });
 
-  async function signIn(username, password) {
-    const j = await raw('/auth/v1/token?grant_type=password', { method: 'POST', body: { email: emailFor(username), password } });
+  /* Sign in with username, email or phone through the server function (adds lock-out after repeated failures).
+     If that function is not deployed yet, fall back to the old direct sign-in so nobody is locked out during the upgrade. */
+  async function signIn(identifier, password) {
+    const id = String(identifier || '').trim(); let j;
+    try { j = await raw('/functions/v1/auth-public', { method: 'POST', body: { action: 'login', identifier: id, password } }); }
+    catch (e) {
+      if (isNet(e) || ![404, 500, 502, 503].includes(e.status)) throw e;
+      j = await raw('/auth/v1/token?grant_type=password', { method: 'POST', body: { email: emailFor(id), password } });
+    }
     saveSession(j); return j.user.id;
   }
   async function accountInfo() { return api('/functions/v1/admin-users', { method: 'POST', body: { action: 'status' } }); }
-  async function publicAccountRequest(body) { return raw('/functions/v1/admin-users', { method: 'POST', body }); }
+  async function publicAccountRequest(body) { return raw('/functions/v1/auth-public', { method: 'POST', body }); }
   async function pullProfiles(portalInfo = null) {
     const rows = await api('/rest/v1/profiles?select=user_id,username,full_name,role,active,must_change,student_id,requested_role,updated_at');
+    const contacts = {}; try { (await api('/rest/v1/contacts?select=user_id,email,phone')).forEach(c => contacts[c.user_id] = c); } catch (e) { /* before migration v11, or no permission */ }
     const current = sess();
     if (!portalInfo && current) {
       const local = Store.get('users', current.user_id);
       if (local && ['student', 'parent'].includes(local.role)) portalInfo = await accountInfo();
     }
-    await Store.replaceAll('users', rows.map(p => ({ id: p.user_id, username: p.username, full_name: p.full_name, role: p.role, active: p.active, must_change: p.must_change, student_id: p.student_id || null, requested_role: p.requested_role || null, portal_student: portalInfo && current && p.user_id === current.user_id ? portalInfo.student : null, updated_at: p.updated_at })));
+    await Store.replaceAll('users', rows.map(p => ({ id: p.user_id, username: p.username, full_name: p.full_name, role: p.role, active: p.active, must_change: p.must_change, student_id: p.student_id || null, requested_role: p.requested_role || null, email: (contacts[p.user_id] || {}).email || null, phone: (contacts[p.user_id] || {}).phone || null, portal_student: portalInfo && current && p.user_id === current.user_id ? portalInfo.student : null, updated_at: p.updated_at })));
     return rows;
   }
   async function pull() {
@@ -110,7 +118,7 @@ const Cloud = (() => {
   const signOut = () => localStorage.removeItem(SES);
   const connect = c => localStorage.setItem(CFG, JSON.stringify({ url: c.url.trim(), anon: c.anon.trim(), domain: (c.domain || 'school-records.app').trim().toLowerCase() }));
   const disconnect = () => { [CFG, SES, CUR, REJ].forEach(k => localStorage.removeItem(k)); };
-  return { rpc: (name, body) => api('/rest/v1/rpc/' + name, { method: 'POST', body: body || {} }), ai: body => api('/functions/v1/ai-proxy', { method: 'POST', body }), sendMessage: body => api('/functions/v1/send-sms', { method: 'POST', body }), usingDefault, enabled, cfg, status, rejected, signIn, signOut, syncNow, start, pull, push, pullProfiles, accountInfo, adminUsers, publicAccountRequest, changePassword, resetCursor, connect, disconnect, emailFor, hasSession: () => !!sess(), on: (k, f) => { cb[k] = f; }, clearRejected: () => localStorage.removeItem(REJ) };
+  return { publicAuth: body => raw('/functions/v1/auth-public', { method: 'POST', body }), rpc: (name, body) => api('/rest/v1/rpc/' + name, { method: 'POST', body: body || {} }), ai: body => api('/functions/v1/ai-proxy', { method: 'POST', body }), sendMessage: body => api('/functions/v1/send-sms', { method: 'POST', body }), usingDefault, enabled, cfg, status, rejected, signIn, signOut, syncNow, start, pull, push, pullProfiles, accountInfo, adminUsers, publicAccountRequest, changePassword, resetCursor, connect, disconnect, emailFor, hasSession: () => !!sess(), on: (k, f) => { cb[k] = f; }, clearRejected: () => localStorage.removeItem(REJ) };
 })();
 
 /* AI runs on the server (supabase/functions/ai-proxy): the Groq key is never stored in the database or on phones. */
